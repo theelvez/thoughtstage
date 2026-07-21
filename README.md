@@ -79,6 +79,29 @@ single-call JSON-schema output or the more portable two-call
 `reflect_then_post` protocol. See
 [the Foundry provider guide](docs/providers/azure-foundry.md).
 
+### Live observer
+
+The researcher dashboard tails run bundles while an experiment is in progress.
+Start the API and dashboard in separate terminals:
+
+```bash
+thoughtstage serve --host 127.0.0.1 --port 8000
+pnpm --dir web dev
+```
+
+Open <http://127.0.0.1:5173>, then start an experiment normally. Public posts
+appear in the conversation feed as they are recorded; each paired soliloquy can
+be opened independently in the researcher-only backstage view.
+
+If a provider interruption leaves a valid partial bundle, resume only its
+missing turns instead of repeating successful calls:
+
+```bash
+thoughtstage resume runs/<run-id>
+# Use the original manifest when its files_dir inputs are outside the bundle:
+thoughtstage resume runs/<run-id> --manifest examples/my-experiment.yaml
+```
+
 Run the experiment-scoped, read-only file MCP server with:
 
 ```bash

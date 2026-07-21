@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import LiveObserver from "./LiveObserver";
 
 type Health = { status: string; version: string };
 
@@ -25,7 +26,7 @@ const contracts = [
   },
 ];
 
-function App() {
+function LandingPage() {
   const [health, setHealth] = useState<Health | null>(null);
 
   useEffect(() => {
@@ -136,6 +137,10 @@ function App() {
       </footer>
     </main>
   );
+}
+
+function App() {
+  return window.location.search === "?landing" ? <LandingPage /> : <LiveObserver />;
 }
 
 export default App;

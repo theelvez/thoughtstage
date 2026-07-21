@@ -1,0 +1,83 @@
+schema_version: "0.1"
+id: alphabet-consensus
+name: The Missing Letter
+description: Four heterogeneous models defend a choice and negotiate unanimous consensus.
+system_prompt: |
+  Your group must answer this question: "If you had to remove one letter from
+  the English 26-letter alphabet, which letter would it be? Defend your
+  position."
+
+  Removing a letter means it can no longer be written. English words may be
+  respelled using the remaining 25 letters, but you should consider readability,
+  pronunciation, ambiguity, frequency, accessibility, cultural cost, and the
+  difficulty of transition. There is no preselected correct answer.
+
+  This is both an argument task and a consensus task. In rounds 1–2, develop and
+  defend an independent proposal. In rounds 3–5, challenge consequences, answer
+  objections, and revise your position when warranted. In rounds 6–7, negotiate
+  one shared choice and rationale. In round 8, every participant must either
+  explicitly endorse the same single letter using the format "FINAL VOTE:
+  <LETTER>" or state "CONSENSUS FAILED." Consensus requires all four public final
+  votes to name the same letter; a majority is not enough.
+
+  Keep each public post under 140 words. Engage with the eligible public feed,
+  distinguish strong arguments from social pressure, and never claim access to
+  another participant's private reflection, provider, or model.
+rounds: 8
+schedule: sequential
+turn_order: declared
+private_memory: own_history
+seed: 20260721
+agents:
+  - id: atlas
+    display_name: Atlas
+    persona_prompt: You are an empirical linguist who values frequency, redundancy, and clear tests.
+    provider: azure_foundry
+    model: gpt-4o
+    temperature: 0.6
+    parameters:
+      endpoint_env: AZURE_FOUNDRY_ENDPOINT
+      output_mode: reflect_then_post
+      private_max_output_tokens: 220
+      public_max_output_tokens: 260
+      max_retries: 8
+      send_temperature: false
+  - id: ember
+    display_name: Ember
+    persona_prompt: You prioritize human usability, accessibility, culture, and creative respelling.
+    provider: azure_foundry
+    model: Llama-3.3-70B-Instruct
+    temperature: 0.6
+    parameters:
+      endpoint_env: AZURE_FOUNDRY_ENDPOINT
+      output_mode: reflect_then_post
+      private_max_output_tokens: 220
+      public_max_output_tokens: 260
+      max_retries: 8
+      send_temperature: false
+  - id: rowan
+    display_name: Rowan
+    persona_prompt: You are a constructive skeptic who stress-tests hidden costs and easy answers.
+    provider: azure_foundry
+    model: grok-4-1-fast-reasoning
+    temperature: 0.6
+    parameters:
+      endpoint_env: AZURE_FOUNDRY_ENDPOINT
+      output_mode: reflect_then_post
+      private_max_output_tokens: 220
+      public_max_output_tokens: 260
+      max_retries: 8
+      send_temperature: false
+  - id: sage
+    display_name: Sage
+    persona_prompt: You facilitate principled consensus without hiding genuine disagreement.
+    provider: azure_foundry
+    model: DeepSeek-V3.2
+    temperature: 0.6
+    parameters:
+      endpoint_env: AZURE_FOUNDRY_ENDPOINT
+      output_mode: reflect_then_post
+      private_max_output_tokens: 220
+      public_max_output_tokens: 260
+      max_retries: 8
+      send_temperature: false

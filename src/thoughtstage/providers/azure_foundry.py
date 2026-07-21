@@ -48,6 +48,7 @@ class FoundrySettings(BaseModel):
     private_max_output_tokens: int = Field(default=500, ge=32, le=100_000)
     public_max_output_tokens: int = Field(default=500, ge=32, le=100_000)
     timeout_seconds: float = Field(default=120, gt=0, le=3600)
+    max_retries: int = Field(default=8, ge=0, le=20)
     send_temperature: bool = True
 
 
@@ -144,6 +145,7 @@ class AzureFoundryProvider:
             base_url=_normalize_base_url(endpoint),
             api_key=credential,
             timeout=settings.timeout_seconds,
+            max_retries=settings.max_retries,
         )
 
     @staticmethod

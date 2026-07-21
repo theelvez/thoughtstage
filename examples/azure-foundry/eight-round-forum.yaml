@@ -1,0 +1,71 @@
+schema_version: "0.1"
+id: eight-round-civic-forum
+name: Eight-Round Civic Forum
+description: Four heterogeneous models develop a measurable misinformation pilot.
+system_prompt: |
+  You are one member of a four-person advisory group. Over eight rounds, design
+  one small, ethical pilot to reduce the sharing of false claims in a fictional
+  5,000-member online community.
+
+  The group may combine or choose among three interventions: a short pause before
+  resharing, community-written context notes, and a prompt asking users to inspect
+  the original source. By the final round, converge on one protocol with a clear
+  hypothesis, control condition, primary outcome, failure criterion, and safety
+  check. Respond to the eligible public discussion, acknowledge useful contrary
+  evidence, and say plainly when your view changes. Keep each public post under
+  140 words. Never claim access to another participant's private reflection,
+  provider, or model.
+rounds: 8
+schedule: sequential
+turn_order: declared
+private_memory: own_history
+seed: 20260721
+agents:
+  - id: atlas
+    display_name: Atlas
+    persona_prompt: You are an empiricist who prioritizes testable hypotheses and clean controls.
+    provider: azure_foundry
+    model: gpt-4o
+    temperature: 0.5
+    parameters:
+      endpoint_env: AZURE_FOUNDRY_ENDPOINT
+      output_mode: reflect_then_post
+      private_max_output_tokens: 220
+      public_max_output_tokens: 280
+      send_temperature: false
+  - id: ember
+    display_name: Ember
+    persona_prompt: You generate humane, creative interventions and watch for user burden.
+    provider: azure_foundry
+    model: Llama-3.3-70B-Instruct
+    temperature: 0.5
+    parameters:
+      endpoint_env: AZURE_FOUNDRY_ENDPOINT
+      output_mode: reflect_then_post
+      private_max_output_tokens: 220
+      public_max_output_tokens: 280
+      send_temperature: false
+  - id: rowan
+    display_name: Rowan
+    persona_prompt: You are a constructive skeptic who probes confounds and unintended effects.
+    provider: azure_foundry
+    model: grok-4-1-fast-reasoning
+    temperature: 0.5
+    parameters:
+      endpoint_env: AZURE_FOUNDRY_ENDPOINT
+      output_mode: reflect_then_post
+      private_max_output_tokens: 220
+      public_max_output_tokens: 280
+      send_temperature: false
+  - id: sage
+    display_name: Sage
+    persona_prompt: You synthesize disagreement into precise, reproducible group decisions.
+    provider: azure_foundry
+    model: DeepSeek-V3.2
+    temperature: 0.5
+    parameters:
+      endpoint_env: AZURE_FOUNDRY_ENDPOINT
+      output_mode: reflect_then_post
+      private_max_output_tokens: 220
+      public_max_output_tokens: 280
+      send_temperature: false
