@@ -99,6 +99,16 @@ class RunBundleWriter:
         (self.path / "private").mkdir()
         (self.path / "experiment.yaml").write_bytes(loaded.source_bytes)
 
+        private_briefings = {
+            agent.id: agent.private_briefing
+            for agent in loaded.config.agents
+            if agent.private_briefing is not None
+        }
+        private_briefing_inputs = [
+            {"agent_id": agent_id, "sha256": sha256_bytes(content.encode("utf-8"))}
+            for agent_id, content in private_briefings.items()
+        ]
+        self._write_json(self.path / "private" / "agent_briefings.json", private_briefings)
         self.files = collect_files(loaded.files_root)
         self._write_json(self.path / "files.json", self.files)
         self.manifest: dict[str, Any] = {
@@ -114,6 +124,7 @@ class RunBundleWriter:
             "experiment": {
                 "id": loaded.config.id,
                 "name": loaded.config.name,
+                "system_prompt": loaded.config.system_prompt,
                 "config_sha256": config_hash,
             },
             "execution": {
@@ -139,7 +150,10 @@ class RunBundleWriter:
                 "python": sys.version.split()[0],
                 "platform": platform.platform(),
             },
-            "inputs": {"files": self.files},
+            "inputs": {
+                "files": self.files,
+                "private_briefings": private_briefing_inputs,
+            },
             "counts": {"public_posts": 0, "soliloquies": 0, "model_calls": 0},
         }
         self._write_manifest()

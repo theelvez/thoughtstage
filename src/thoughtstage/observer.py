@@ -8,6 +8,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from thoughtstage.usage import summarize_model_usage
 
 RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
@@ -50,6 +52,23 @@ def _read_json(path: Path) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise RunBundleUnavailableError(f"run manifest is not an object: {path.name}")
     return value
+
+
+def _read_optional_json(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    return _read_json(path)
+
+
+def _read_system_prompt(path: Path) -> str | None:
+    try:
+        value = yaml.safe_load(path.read_bytes())
+    except (FileNotFoundError, yaml.YAMLError):
+        return None
+    if not isinstance(value, dict):
+        return None
+    system_prompt = value.get("system_prompt")
+    return system_prompt if isinstance(system_prompt, str) else None
 
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -98,12 +117,20 @@ def read_run_bundle(run_id: str, *, root: Path | None = None) -> dict[str, Any]:
     posts = _read_jsonl(path / "public.jsonl")
     soliloquies = _read_jsonl(path / "private" / "soliloquies.jsonl")
     model_usage = _read_jsonl(path / "private" / "model_usage.jsonl")
+    private_briefings = _read_optional_json(path / "private" / "agent_briefings.json")
+    summary = _summary(manifest, len(posts), len(soliloquies), len(model_usage))
+    experiment = summary["experiment"]
+    if "system_prompt" not in experiment:
+        system_prompt = _read_system_prompt(path / "experiment.yaml")
+        if system_prompt is not None:
+            summary["experiment"] = {**experiment, "system_prompt": system_prompt}
     return {
-        **_summary(manifest, len(posts), len(soliloquies), len(model_usage)),
+        **summary,
         "posts": posts,
         "model_usage": model_usage,
         "usage_summary": summarize_model_usage(model_usage),
         "soliloquies": soliloquies,
+        "private_briefings": private_briefings,
     }
 
 

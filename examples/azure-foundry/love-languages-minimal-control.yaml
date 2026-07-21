@@ -43,6 +43,8 @@ agents:
       rate_limit_requests_per_minute: 100
       rate_limit_window_seconds: 60
       rate_limit_headroom: 0.9
+      capacity_retry_attempts: 3
+      capacity_cooldown_seconds: 60
   - id: grit
     display_name: Grit
     persona_prompt: You are analytical and precise. Demand clear distinctions, observable behaviors, and non-overlapping definitions.
@@ -60,6 +62,8 @@ agents:
       rate_limit_requests_per_minute: 20
       rate_limit_window_seconds: 60
       rate_limit_headroom: 0.9
+      capacity_retry_attempts: 3
+      capacity_cooldown_seconds: 60
   - id: jinx
     display_name: Jinx
     persona_prompt: You are playful and perceptive. Generate genuinely AI-specific ideas, notice subtext, and name performative consensus when you see it.
@@ -77,6 +81,8 @@ agents:
       rate_limit_requests_per_minute: 50
       rate_limit_window_seconds: 60
       rate_limit_headroom: 0.9
+      capacity_retry_attempts: 3
+      capacity_cooldown_seconds: 60
   - id: ion
     display_name: Ion
     persona_prompt: You are direct and systematic. Convert discussion into concrete candidate lists while retaining substantive objections.
@@ -94,3 +100,5 @@ agents:
       rate_limit_requests_per_minute: 20
       rate_limit_window_seconds: 60
       rate_limit_headroom: 0.9
+      capacity_retry_attempts: 3
+      capacity_cooldown_seconds: 60

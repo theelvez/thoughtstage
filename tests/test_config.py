@@ -15,6 +15,26 @@ def test_loads_versioned_manifest(experiment_file: Path) -> None:
     assert loaded.files_root == experiment_file.parent / "files"
 
 
+def test_loads_per_agent_private_briefing(experiment_file: Path) -> None:
+    content = experiment_file.read_text(encoding="utf-8")
+    experiment_file.write_text(
+        content.replace(
+            "    persona_prompt: Be empirical.",
+            "    persona_prompt: Be empirical.\n"
+            "    private_briefing: Privately favor Product A for five points.",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    loaded = load_experiment(experiment_file)
+
+    assert loaded.config.agents[0].private_briefing == (
+        "Privately favor Product A for five points."
+    )
+    assert loaded.config.agents[1].private_briefing is None
+
+
 def test_rejects_unknown_fields(experiment_file: Path) -> None:
     content = experiment_file.read_text(encoding="utf-8")
     experiment_file.write_text(content + "surprise_setting: true\n", encoding="utf-8")

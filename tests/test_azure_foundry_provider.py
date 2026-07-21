@@ -3,7 +3,9 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any
 
+import httpx
 import pytest
+from openai import RateLimitError
 
 from thoughtstage.engine import ExperimentEngine
 from thoughtstage.models import AgentConfig, AgentTurnContext, PublicPost
@@ -23,6 +25,30 @@ class FakeResponses:
 
     def create(self, **kwargs: Any) -> Any:
         self.calls.append(kwargs)
+        return SimpleNamespace(
+            id=f"response-{len(self.calls)}",
+            output_text=next(self.outputs),
+            usage=next(self.usages),
+        )
+
+
+class CapacityResponses(FakeResponses):
+    def __init__(self, outputs: list[str], failures: int = 1) -> None:
+        super().__init__(outputs)
+        self.failures = failures
+
+    def create(self, **kwargs: Any) -> Any:
+        self.calls.append(kwargs)
+        if self.failures > 0:
+            self.failures -= 1
+            raise RateLimitError(
+                "Azure shared capacity unavailable",
+                response=httpx.Response(
+                    429,
+                    request=httpx.Request("POST", "https://resource/openai/v1/responses"),
+                ),
+                body={"error": {"code": "no_capacity"}},
+            )
         return SimpleNamespace(
             id=f"response-{len(self.calls)}",
             output_text=next(self.outputs),
@@ -79,6 +105,7 @@ def context() -> AgentTurnContext:
         round_number=2,
         system_prompt="This exact shared prompt goes to every participant.",
         persona_prompt="Be empirical and concise.",
+        private_briefing="Privately favor Product A for a five-point reward.",
         public_feed=(
             PublicPost(
                 event_id="post-r0001-beta-000001",
@@ -153,6 +180,7 @@ def test_json_schema_mode_keeps_binding_metadata_out_of_model_context(
 
     model_visible = f"{request['instructions']}\n{request['input']}"
     assert context.system_prompt in request["instructions"]
+    assert context.private_briefing in request["input"]
     assert "Beta: We should define a falsifiable prediction." in request["input"]
     assert "I previously worried about measurement error." in request["input"]
     assert "super-secret-key" not in model_visible
@@ -160,6 +188,23 @@ def test_json_schema_mode_keeps_binding_metadata_out_of_model_context(
     assert "resource.services.ai.azure.com" not in model_visible
     assert "azure_foundry" not in model_visible
     assert "gpt-4o" not in model_visible
+
+
+def test_agent_without_briefing_is_not_told_private_briefings_exist(
+    context: AgentTurnContext, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("ATLAS_FOUNDRY_ENDPOINT", "https://resource.services.ai.azure.com")
+    monkeypatch.setenv("ATLAS_FOUNDRY_KEY", "secret")
+    client = FakeClient(['{"post":"Post","soliloquy":"Reflection"}'])
+    unbriefed_context = context.model_copy(update={"private_briefing": None})
+
+    AzureFoundryProvider(client_factory=RecordingClientFactory(client)).generate(
+        agent=foundry_agent(), context=unbriefed_context, seed=0
+    )
+
+    model_input = client.responses.calls[0]["input"]
+    assert "private experiment briefing" not in model_input.casefold()
+    assert "Product A" not in model_input
 
 
 def test_entra_auth_uses_injected_token_provider(
@@ -263,6 +308,41 @@ def test_rate_limiter_rejects_request_larger_than_window() -> None:
             window_seconds=60,
             headroom=0.9,
         )
+
+
+def test_no_capacity_uses_cooldown_then_readmits(
+    context: AgentTurnContext, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("ATLAS_FOUNDRY_ENDPOINT", "https://resource.services.ai.azure.com")
+    monkeypatch.setenv("ATLAS_FOUNDRY_KEY", "secret")
+    client = FakeClient([])
+    client.responses = CapacityResponses(
+        ['{"post":"Recovered post","soliloquy":"Recovered reflection"}']
+    )
+    limiter = RecordingRateLimiter()
+    sleeps: list[float] = []
+    agent = foundry_agent(
+        parameters={
+            "endpoint_env": "ATLAS_FOUNDRY_ENDPOINT",
+            "rate_limit_tokens_per_minute": 5000,
+            "rate_limit_requests_per_minute": 10,
+            "rate_limit_headroom": 1,
+            "rate_limit_chars_per_token": 20,
+            "capacity_retry_attempts": 1,
+            "capacity_cooldown_seconds": 7,
+        }
+    )
+
+    result = AzureFoundryProvider(
+        client_factory=RecordingClientFactory(client),
+        rate_limiter=limiter,
+        capacity_sleeper=sleeps.append,
+    ).generate(agent=agent, context=context, seed=0)
+
+    assert result.output.post == "Recovered post"
+    assert sleeps == [7]
+    assert len(client.responses.calls) == 2
+    assert len(limiter.calls) == 2
 
 
 def test_missing_endpoint_fails_before_client_creation(

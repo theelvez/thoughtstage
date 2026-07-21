@@ -194,6 +194,7 @@ class ExperimentEngine:
                     round_number=round_number,
                     system_prompt=config.system_prompt,
                     persona_prompt=agent.persona_prompt,
+                    private_briefing=agent.private_briefing,
                     public_feed=feed,
                     own_soliloquies=own_history,
                     available_files=available_files,

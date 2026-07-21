@@ -63,6 +63,8 @@ Supported provider parameters are:
 | `rate_limit_window_seconds` | `60` | Rolling capacity-window duration |
 | `rate_limit_headroom` | `0.9` | Fraction of declared capacity available to reservations |
 | `rate_limit_chars_per_token` | `3.5` | Conservative character-to-token estimate used before sending |
+| `capacity_retry_attempts` | `3` | Additional attempts after Azure reports transient shared-service `no_capacity` |
+| `capacity_cooldown_seconds` | `60` | Cooldown before each capacity retry |
 
 Unknown parameters are rejected so a misspelling cannot silently change the
 experimental protocol.
@@ -74,6 +76,11 @@ instead of sending a request known to be over the declared limit. A single
 request estimated to be larger than the usable window fails locally. Reservations
 are intentionally conservative and are not a substitute for provider-enforced
 quota or retry handling for unobserved external traffic.
+
+Azure's `no_capacity` response is distinct from declared quota exhaustion. On
+that signal only, Thoughtstage opens a cooldown, waits, reserves admission
+capacity again, and retries up to `capacity_retry_attempts`. Other 429 responses
+are left to the normal client retry/error path.
 
 ## Dual-output protocols
 

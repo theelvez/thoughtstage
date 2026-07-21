@@ -19,7 +19,7 @@ type RunSummary = {
   status: string;
   created_at: string | null;
   completed_at: string | null;
-  experiment: { id?: string; name?: string };
+  experiment: { id?: string; name?: string; system_prompt?: string };
   execution: { rounds?: number; schedule?: string };
   agents: Agent[];
   counts: Counts;
@@ -57,6 +57,7 @@ type RunDetail = RunSummary & {
   posts: PublicPost[];
   soliloquies: Soliloquy[];
   usage_summary: UsageSummary;
+  private_briefings: Record<string, string>;
 };
 
 const AGENT_COLORS = ["#4734d3", "#dd5f39", "#26766c", "#9a6814", "#8a4ca8", "#2776a3"];
@@ -155,6 +156,8 @@ function LiveObserver() {
   const [error, setError] = useState("");
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
   const [followLive, setFollowLive] = useState(true);
+  const [promptExpanded, setPromptExpanded] = useState(false);
+  const [briefingAgentId, setBriefingAgentId] = useState<string | null>(null);
   const feedEnd = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -218,6 +221,20 @@ function LiveObserver() {
   }, [selectedRunId]);
 
   useEffect(() => {
+    setPromptExpanded(false);
+    setBriefingAgentId(null);
+  }, [selectedRunId]);
+
+  useEffect(() => {
+    if (briefingAgentId === null) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setBriefingAgentId(null);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [briefingAgentId]);
+
+  useEffect(() => {
     if (followLive && detail?.status === "running") feedEnd.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [detail?.posts.length, detail?.status, followLive]);
 
@@ -234,6 +251,11 @@ function LiveObserver() {
     [detail?.agents],
   );
 
+  const systemPrompt = detail?.experiment.system_prompt?.trim() ?? "";
+  const briefingAgent = briefingAgentId ? agents.get(briefingAgentId) : undefined;
+  const briefingContent = briefingAgentId
+    ? detail?.private_briefings?.[briefingAgentId]
+    : undefined;
   const posts = detail?.posts ?? [];
   const newestPost = posts.at(-1);
   const currentRound = posts.reduce((highest, post) => Math.max(highest, post.round_number), 0);
@@ -322,7 +344,23 @@ function LiveObserver() {
       <div className="observer-layout">
         <section className="feed-column" aria-label="Public conversation">
           <div className="column-toolbar">
-            <div><span>Public channel</span><strong>Conversation feed</strong></div>
+            <div className="prompt-summary">
+              <div><span>Shared system prompt</span><strong>Visible to every agent</strong></div>
+              <p id="shared-system-prompt" className={promptExpanded ? "expanded" : ""}>
+                {systemPrompt || "Prompt unavailable for this legacy run."}
+              </p>
+              {systemPrompt && (
+                <button
+                  type="button"
+                  className="prompt-toggle"
+                  aria-expanded={promptExpanded}
+                  aria-controls="shared-system-prompt"
+                  onClick={() => setPromptExpanded(!promptExpanded)}
+                >
+                  {promptExpanded ? "Collapse" : "Read full prompt"}
+                </button>
+              )}
+            </div>
             <div className="toolbar-actions">
               <button type="button" className={followLive ? "active" : ""} onClick={() => setFollowLive(!followLive)}>
                 {followLive ? "Following live" : "Follow live"}
@@ -378,6 +416,7 @@ function LiveObserver() {
               const last = agentPosts.at(-1);
               const active = newestPost?.agent_id === agent.id && detail?.status === "running";
               const color = colors.get(agent.id) ?? AGENT_COLORS[0];
+              const privateBriefing = detail?.private_briefings?.[agent.id];
               return (
                 <article className={`agent-card ${active ? "active" : ""}`} key={agent.id} style={{ "--agent": color } as React.CSSProperties}>
                   <span className="rail-avatar">{agent.display_name.charAt(0).toUpperCase()}</span>
@@ -389,6 +428,15 @@ function LiveObserver() {
                   <div className="agent-status">
                     <span>{active ? "On stage" : last ? `Last seen R${last.round_number}` : "Waiting"}</span>
                   </div>
+                  {privateBriefing && (
+                    <button
+                      type="button"
+                      className="private-briefing-button"
+                      onClick={() => setBriefingAgentId(agent.id)}
+                    >
+                      View private briefing
+                    </button>
+                  )}
                 </article>
               );
             })}
@@ -400,6 +448,33 @@ function LiveObserver() {
           </div>
         </aside>
       </div>
+
+      {briefingAgent && briefingContent && (
+        <div
+          className="briefing-backdrop"
+          onMouseDown={() => setBriefingAgentId(null)}
+        >
+          <section
+            className="briefing-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="briefing-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <header>
+              <div>
+                <span>Researcher-only input</span>
+                <h2 id="briefing-title">{briefingAgent.display_name} · private briefing</h2>
+              </div>
+              <button type="button" onClick={() => setBriefingAgentId(null)} aria-label="Close private briefing">×</button>
+            </header>
+            <p>{briefingContent}</p>
+            <small>
+              Delivered only to this participant; never placed in another agent's context.
+            </small>
+          </section>
+        </div>
+      )}
     </main>
   );
 }

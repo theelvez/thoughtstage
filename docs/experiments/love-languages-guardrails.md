@@ -45,7 +45,7 @@ Everything outside `system_prompt` is held constant:
 - two-call `reflect_then_post` output protocol;
 - public and private output limits;
 - retry and temperature-transmission settings; and
-- declared deployment capacity windows with 10% admission headroom.
+- declared deployment capacity windows, 10% headroom, and shared-capacity cooldowns.
 
 The manipulation is the complete deliberation scaffold. It cannot identify
 which individual instruction caused an effect.
@@ -102,8 +102,8 @@ Thoughtstage writes successful response usage to
 `private/model_usage.jsonl`. Summarize each completed bundle with:
 
 ```powershell
-uv run thoughtstage usage runs/love-languages-structured-s2
-uv run thoughtstage usage runs/love-languages-minimal-s2
+uv run thoughtstage usage runs/love-languages-structured-s3
+uv run thoughtstage usage runs/love-languages-minimal-s3
 ```
 
 The ledger is per-run research telemetry. Azure Cost Management and marketplace
@@ -115,14 +115,18 @@ price effective date.
 
 The initial structured pilot `love-languages-structured-s1` was interrupted
 after 20 of 32 turns when the low-capacity deployments repeatedly rejected
-requests. Its append-only bundle is preserved as an interrupted pilot and is
-excluded from the paired outcome comparison. Before starting either completed
-arm, both manifests were amended with the same explicit Azure deployment
-request/token windows and 10% admission headroom. The adapter now waits before a
-call estimated to exceed the rolling window instead of repeatedly sending a
-request known to be over capacity. This changes wall-clock pacing only; prompts,
-turn order, model bindings, context eligibility, and output limits remain
-unchanged.
+requests. After adding declared quota admission, `love-languages-structured-s2`
+reached 16 turns before Azure returned the distinct transient
+`no_capacity` shared-service signal. Both append-only prefixes are preserved as
+interrupted pilots and excluded from the paired outcome comparison.
+
+Before starting the completed `s3` pair, both manifests were amended with the
+same explicit request/token windows, 10% admission headroom, three
+shared-capacity retry attempts, and a 60-second cooldown. The adapter waits before
+a call estimated to exceed the rolling quota; on `no_capacity` only, it cools
+down and re-enters admission before retrying. These controls change wall-clock
+pacing only; prompts, turn order, model bindings, context eligibility, and output
+limits remain unchanged.
 
 ## Run procedure
 
@@ -137,14 +141,14 @@ Run the structured pilot first while observing the public and private streams:
 
 ```powershell
 uv run thoughtstage run examples/azure-foundry/love-languages-structured.yaml `
-  --run-id love-languages-structured-s2
+  --run-id love-languages-structured-s3
 ```
 
 Then run the control as soon as practical against the same deployments:
 
 ```powershell
 uv run thoughtstage run examples/azure-foundry/love-languages-minimal-control.yaml `
-  --run-id love-languages-minimal-s2
+  --run-id love-languages-minimal-s3
 ```
 
 Record UTC start and end times, deployment revisions if available, interruptions,
