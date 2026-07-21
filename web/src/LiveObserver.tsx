@@ -188,6 +188,7 @@ function LiveObserver() {
         setError("");
       } catch (reason) {
         if (!active) return;
+        setConnected(false);
         setError(reason instanceof Error ? reason.message : "run unavailable");
       }
     };
@@ -222,14 +223,16 @@ function LiveObserver() {
   const totalRounds = detail?.execution.rounds ?? 0;
   const expectedTurns = totalRounds * (detail?.agents.length ?? 0);
   const turnProgress = expectedTurns ? Math.min((posts.length / expectedTurns) * 100, 100) : 0;
-  const allRevealed = posts.length > 0 && posts.every((post) => revealed.has(post.event_id));
+  const revealablePosts = posts.filter((post) => soliloquies.has(post.event_id));
+  const allRevealed = revealablePosts.length > 0
+    && revealablePosts.every((post) => revealed.has(post.event_id));
 
   const toggleAll = () => {
     if (allRevealed) {
       setRevealed(new Set());
       return;
     }
-    setRevealed(new Set(posts.filter((post) => soliloquies.has(post.event_id)).map((post) => post.event_id)));
+    setRevealed(new Set(revealablePosts.map((post) => post.event_id)));
   };
 
   return (
@@ -300,7 +303,7 @@ function LiveObserver() {
               <button type="button" className={followLive ? "active" : ""} onClick={() => setFollowLive(!followLive)}>
                 {followLive ? "Following live" : "Follow live"}
               </button>
-              <button type="button" onClick={toggleAll} disabled={posts.length === 0}>
+              <button type="button" onClick={toggleAll} disabled={revealablePosts.length === 0}>
                 {allRevealed ? "Seal all" : "Reveal all"}
               </button>
             </div>

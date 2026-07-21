@@ -5,16 +5,20 @@ Thank you for helping make multi-agent experiments easier to inspect and repeat.
 ## Development setup
 
 ```bash
-python -m venv .venv
-python -m pip install -e ".[dev]"
-pytest
-ruff check .
+uv sync --frozen --extra dev
+uv run ruff check .
+uv run ruff format --check .
+uv run pytest --cov=thoughtstage --cov-report=term-missing --cov-fail-under=85
 ```
+
+These locked-dependency commands match CI. The editable virtual-environment path
+in the README is convenient for exploration, but pull requests should be checked
+with the commands above before submission.
 
 The dashboard uses pnpm:
 
 ```bash
-pnpm --dir web install
+pnpm --dir web install --frozen-lockfile
 pnpm --dir web test
 pnpm --dir web build
 ```

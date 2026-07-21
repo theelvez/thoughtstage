@@ -217,3 +217,18 @@ def test_invalid_structured_response_is_rejected(
 
     with pytest.raises(AzureFoundryResponseError, match="invalid dual output"):
         provider.generate(agent=foundry_agent(), context=context, seed=0)
+
+
+@pytest.mark.parametrize("endpoint", ["", "   "])
+def test_empty_endpoint_names_environment_and_agent(
+    endpoint: str, context: AgentTurnContext, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("ATLAS_FOUNDRY_ENDPOINT", endpoint)
+    factory = RecordingClientFactory(FakeClient([]))
+
+    with pytest.raises(AzureFoundryConfigurationError, match="ATLAS_FOUNDRY_ENDPOINT.*atlas"):
+        AzureFoundryProvider(client_factory=factory).generate(
+            agent=foundry_agent(), context=context, seed=0
+        )
+
+    assert factory.calls == []

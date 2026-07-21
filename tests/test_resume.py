@@ -118,3 +118,30 @@ def test_resume_cli_completes_an_interrupted_bundle(experiment_file: Path, tmp_p
     assert result.exit_code == 0
     assert '"resumed": true' in result.stdout
     assert len((bundle / "public.jsonl").read_text(encoding="utf-8").splitlines()) == 2
+
+
+def test_resume_repairs_single_trailing_partial_record(
+    experiment_file: Path, tmp_path: Path
+) -> None:
+    loaded = _sequential_experiment(experiment_file)
+    bundle = _interrupted_bundle(loaded, tmp_path / "runs")
+    public_path = bundle / "public.jsonl"
+    with public_path.open("a", encoding="utf-8", newline="\n") as stream:
+        stream.write('{"partial"')
+
+    ExperimentEngine({"mock": ResumeProvider()}).run(loaded, resume_path=bundle)
+
+    lines = public_path.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 2
+    assert all(isinstance(json.loads(line), dict) for line in lines)
+
+
+def test_resume_rejects_terminated_invalid_json(experiment_file: Path, tmp_path: Path) -> None:
+    loaded = _sequential_experiment(experiment_file)
+    bundle = _interrupted_bundle(loaded, tmp_path / "runs")
+    public_path = bundle / "public.jsonl"
+    with public_path.open("a", encoding="utf-8", newline="\n") as stream:
+        stream.write("{invalid-json}\n")
+
+    with pytest.raises(RunBundleResumeError, match="invalid JSON"):
+        ExperimentEngine({"mock": ResumeProvider()}).run(loaded, resume_path=bundle)
