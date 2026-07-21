@@ -1,0 +1,30 @@
+services:
+  api:
+    build:
+      context: .
+    image: thoughtstage-api:local
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./runs:/workspace/runs
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./web
+    image: thoughtstage-web:local
+    ports:
+      - "3000:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
