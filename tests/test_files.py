@@ -10,13 +10,14 @@ from thoughtstage.files import ExperimentFileReader, FileAccessError
 def test_lists_reads_hashes_and_searches(tmp_path: Path) -> None:
     (tmp_path / "notes").mkdir()
     target = tmp_path / "notes" / "brief.txt"
-    target.write_text("First line\nEvidence changes minds\nThird line\n", encoding="utf-8")
+    payload = b"First line\nEvidence changes minds\nThird line\n"
+    target.write_bytes(payload)
     audit: list[tuple[str, dict]] = []
     reader = ExperimentFileReader(
         tmp_path, audit=lambda operation, details: audit.append((operation, details))
     )
 
-    assert reader.list_files("*.txt") == [{"path": "notes/brief.txt", "size": 48}]
+    assert reader.list_files("*.txt") == [{"path": "notes/brief.txt", "size": len(payload)}]
     assert reader.file_info("notes/brief.txt")["sha256"]
     assert reader.read_text("notes/brief.txt", 2, 2)["text"] == "Evidence changes minds"
     assert reader.search_text("evidence")[0]["line"] == 2
