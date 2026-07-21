@@ -41,6 +41,11 @@ def test_run_command_writes_bundle(experiment_file: Path, tmp_path: Path) -> Non
     assert '"run_id": "cli-run"' in result.stdout
     assert (tmp_path / "runs" / "cli-run" / "manifest.json").exists()
 
+    usage_result = runner.invoke(app, ["usage", str(tmp_path / "runs" / "cli-run")])
+    assert usage_result.exit_code == 0
+    assert '"provider_reported": true' in usage_result.stdout
+    assert '"model_calls": 0' in usage_result.stdout
+
 
 def test_validate_reports_invalid_manifest(tmp_path: Path) -> None:
     manifest = tmp_path / "invalid.yaml"

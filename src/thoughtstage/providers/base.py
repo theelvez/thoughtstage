@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from thoughtstage.models import AgentConfig, AgentTurnContext, ModelOutput
+from thoughtstage.models import AgentConfig, AgentTurnContext, ProviderResult
 
 
 class Provider(Protocol):
@@ -16,4 +16,4 @@ class Provider(Protocol):
         agent: AgentConfig,
         context: AgentTurnContext,
         seed: int,
-    ) -> ModelOutput: ...
+    ) -> ProviderResult: ...

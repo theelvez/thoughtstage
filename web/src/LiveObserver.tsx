@@ -11,6 +11,7 @@ type Agent = {
 type Counts = {
   public_posts: number;
   soliloquies: number;
+  model_calls: number;
 };
 
 type RunSummary = {
@@ -44,9 +45,18 @@ type Soliloquy = {
   content: string;
 };
 
+type UsageSummary = {
+  totals: {
+    model_calls: number;
+    input_tokens: number;
+    output_tokens: number;
+  };
+};
+
 type RunDetail = RunSummary & {
   posts: PublicPost[];
   soliloquies: Soliloquy[];
+  usage_summary: UsageSummary;
 };
 
 const AGENT_COLORS = ["#4734d3", "#dd5f39", "#26766c", "#9a6814", "#8a4ca8", "#2776a3"];
@@ -63,6 +73,13 @@ function formatRunTime(value: string | null) {
 
 function shortModel(model: string) {
   return model.split("/").at(-1) ?? model;
+}
+
+function formatTokens(value: number) {
+  return new Intl.NumberFormat(undefined, {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(value);
 }
 
 function PostCard({
@@ -188,6 +205,7 @@ function LiveObserver() {
         setError("");
       } catch (reason) {
         if (!active) return;
+        setConnected(false);
         setError(reason instanceof Error ? reason.message : "run unavailable");
       }
     };
@@ -222,14 +240,16 @@ function LiveObserver() {
   const totalRounds = detail?.execution.rounds ?? 0;
   const expectedTurns = totalRounds * (detail?.agents.length ?? 0);
   const turnProgress = expectedTurns ? Math.min((posts.length / expectedTurns) * 100, 100) : 0;
-  const allRevealed = posts.length > 0 && posts.every((post) => revealed.has(post.event_id));
+  const revealablePosts = posts.filter((post) => soliloquies.has(post.event_id));
+  const allRevealed = revealablePosts.length > 0
+    && revealablePosts.every((post) => revealed.has(post.event_id));
 
   const toggleAll = () => {
     if (allRevealed) {
       setRevealed(new Set());
       return;
     }
-    setRevealed(new Set(posts.filter((post) => soliloquies.has(post.event_id)).map((post) => post.event_id)));
+    setRevealed(new Set(revealablePosts.map((post) => post.event_id)));
   };
 
   return (
@@ -284,6 +304,13 @@ function LiveObserver() {
           <div><strong>{String(currentRound).padStart(2, "0")}</strong><span>/ {String(totalRounds).padStart(2, "0")} rounds</span></div>
           <div><strong>{posts.length}</strong><span>/ {expectedTurns || "—"} turns</span></div>
           <div><strong>{detail?.soliloquies.length ?? 0}</strong><span>private</span></div>
+          <div><strong>{detail?.counts.model_calls ?? 0}</strong><span>model calls</span></div>
+          <div>
+            <strong title={`${detail?.usage_summary.totals.input_tokens ?? 0} input / ${detail?.usage_summary.totals.output_tokens ?? 0} output tokens`}>
+              {formatTokens(detail?.usage_summary.totals.input_tokens ?? 0)} / {formatTokens(detail?.usage_summary.totals.output_tokens ?? 0)}
+            </strong>
+            <span>input / output tokens</span>
+          </div>
         </div>
         <div className="progress-track" aria-label={`${Math.round(turnProgress)} percent complete`}>
           <span style={{ width: `${turnProgress}%` }} />
@@ -300,7 +327,7 @@ function LiveObserver() {
               <button type="button" className={followLive ? "active" : ""} onClick={() => setFollowLive(!followLive)}>
                 {followLive ? "Following live" : "Follow live"}
               </button>
-              <button type="button" onClick={toggleAll} disabled={posts.length === 0}>
+              <button type="button" onClick={toggleAll} disabled={revealablePosts.length === 0}>
                 {allRevealed ? "Seal all" : "Reveal all"}
               </button>
             </div>

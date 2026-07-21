@@ -140,7 +140,8 @@ function LandingPage() {
 }
 
 function App() {
-  return window.location.search === "?landing" ? <LandingPage /> : <LiveObserver />;
+  const query = new URLSearchParams(window.location.search);
+  return query.has("landing") ? <LandingPage /> : <LiveObserver />;
 }
 
 export default App;

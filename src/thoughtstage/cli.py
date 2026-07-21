@@ -11,6 +11,11 @@ import typer
 from thoughtstage import __version__
 from thoughtstage.config import ExperimentLoadError, load_experiment
 from thoughtstage.engine import ExperimentEngine
+from thoughtstage.observer import (
+    RunBundleNotFoundError,
+    RunBundleUnavailableError,
+    read_run_bundle,
+)
 from thoughtstage.reproducibility import RunBundleResumeError
 
 app = typer.Typer(
@@ -64,6 +69,7 @@ def run_experiment(
                 "bundle": result.bundle_path,
                 "public_posts": len(result.public_posts),
                 "soliloquies": len(result.soliloquies),
+                "model_calls": len(result.model_usage),
             },
             indent=2,
         )
@@ -95,6 +101,31 @@ def resume_experiment(
                 "bundle": result.bundle_path,
                 "public_posts": len(result.public_posts),
                 "soliloquies": len(result.soliloquies),
+                "model_calls": len(result.model_usage),
+            },
+            indent=2,
+        )
+    )
+
+
+@app.command()
+def usage(
+    bundle: Annotated[Path, typer.Argument(exists=True, file_okay=False, readable=True)],
+) -> None:
+    """Summarize provider-reported token usage for a run bundle."""
+
+    resolved = bundle.resolve()
+    try:
+        detail = read_run_bundle(resolved.name, root=resolved.parent)
+    except (RunBundleNotFoundError, RunBundleUnavailableError) as exc:
+        typer.echo(f"Cannot read usage: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(
+        json.dumps(
+            {
+                "run_id": detail["run_id"],
+                "provider_reported": True,
+                "usage": detail["usage_summary"],
             },
             indent=2,
         )

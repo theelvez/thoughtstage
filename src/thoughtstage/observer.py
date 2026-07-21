@@ -8,6 +8,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from thoughtstage.usage import summarize_model_usage
+
 RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 
@@ -68,7 +70,9 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     return records
 
 
-def _summary(manifest: dict[str, Any], posts: int, soliloquies: int) -> dict[str, Any]:
+def _summary(
+    manifest: dict[str, Any], posts: int, soliloquies: int, model_calls: int
+) -> dict[str, Any]:
     return {
         "run_id": manifest.get("run_id"),
         "status": manifest.get("status", "unknown"),
@@ -77,7 +81,11 @@ def _summary(manifest: dict[str, Any], posts: int, soliloquies: int) -> dict[str
         "experiment": manifest.get("experiment", {}),
         "execution": manifest.get("execution", {}),
         "agents": manifest.get("agents", []),
-        "counts": {"public_posts": posts, "soliloquies": soliloquies},
+        "counts": {
+            "public_posts": posts,
+            "soliloquies": soliloquies,
+            "model_calls": model_calls,
+        },
     }
 
 
@@ -89,9 +97,12 @@ def read_run_bundle(run_id: str, *, root: Path | None = None) -> dict[str, Any]:
     manifest = _read_json(path / "manifest.json")
     posts = _read_jsonl(path / "public.jsonl")
     soliloquies = _read_jsonl(path / "private" / "soliloquies.jsonl")
+    model_usage = _read_jsonl(path / "private" / "model_usage.jsonl")
     return {
-        **_summary(manifest, len(posts), len(soliloquies)),
+        **_summary(manifest, len(posts), len(soliloquies), len(model_usage)),
         "posts": posts,
+        "model_usage": model_usage,
+        "usage_summary": summarize_model_usage(model_usage),
         "soliloquies": soliloquies,
     }
 
@@ -112,5 +123,6 @@ def list_run_bundles(*, root: Path | None = None) -> list[dict[str, Any]]:
             continue
         posts = _read_jsonl(path / "public.jsonl")
         soliloquies = _read_jsonl(path / "private" / "soliloquies.jsonl")
-        runs.append(_summary(manifest, len(posts), len(soliloquies)))
+        model_usage = _read_jsonl(path / "private" / "model_usage.jsonl")
+        runs.append(_summary(manifest, len(posts), len(soliloquies), len(model_usage)))
     return sorted(runs, key=lambda item: item.get("created_at") or "", reverse=True)

@@ -45,6 +45,15 @@ jobs:
       - run: pnpm --dir web test
       - run: pnpm --dir web build
 
+  infrastructure:
+    name: Azure Bicep
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: az bicep install
+      - run: az bicep build --file infra/azure/main.bicep --outfile /tmp/thoughtstage-main.json
+      - run: az bicep build-params --file infra/azure/main.example.bicepparam --outfile /tmp/thoughtstage-main.parameters.json
+
   container:
     name: Container
     runs-on: ubuntu-latest

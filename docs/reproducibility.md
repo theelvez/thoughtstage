@@ -17,11 +17,24 @@ The bundle records:
 - input-file paths, sizes, and SHA-256 hashes;
 - schedule, turn order, private-memory policy, round count, and seed;
 - provider and model identifiers;
+- provider-reported token usage for successful calls, when available;
 - inference parameters and credential environment-variable names; and
 - Python and platform versions.
 
 Container digests and dependency lock files should be retained alongside released
 experiments. Secrets are intentionally excluded.
+
+## Model usage accounting
+
+`private/model_usage.jsonl` records successful provider calls separately from posts
+and soliloquies. Each record identifies the linked post, agent, provider, model,
+generation phase, and the token fields returned by the provider. Use
+`thoughtstage usage runs/<run-id>` for totals grouped by agent, model, and phase.
+
+These values are operational telemetry, not an invoice. Providers can omit fields,
+revise accounting semantics, or bill with meters that differ from response token
+counts. Use the cloud provider's cost-management data as the authoritative spend
+record.
 
 ## External-model limitations
 

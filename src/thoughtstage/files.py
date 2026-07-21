@@ -69,11 +69,21 @@ class ExperimentFileReader:
         except UnicodeDecodeError as exc:
             raise FileAccessError("file is not valid UTF-8 text") from exc
 
+    def _discovered_files(self, root: Path) -> list[Path]:
+        """Return only files that pass the same path policy as direct reads."""
+
+        files: list[Path] = []
+        for path in sorted(root.rglob("*")):
+            try:
+                relative = path.relative_to(self.root).as_posix()
+                files.append(self._resolve(relative, require_file=True))
+            except (FileAccessError, ValueError):
+                continue
+        return files
+
     def list_files(self, pattern: str = "*") -> list[dict[str, Any]]:
         results: list[dict[str, Any]] = []
-        for path in sorted(self.root.rglob("*")):
-            if path.is_symlink() or not path.is_file():
-                continue
+        for path in self._discovered_files(self.root):
             relative = self._relative_name(path)
             if fnmatch.fnmatch(relative, pattern) or fnmatch.fnmatch(path.name, pattern):
                 results.append({"path": relative, "size": path.stat().st_size})
@@ -82,11 +92,17 @@ class ExperimentFileReader:
 
     def file_info(self, path: str) -> dict[str, Any]:
         resolved = self._resolve(path, require_file=True)
-        payload = resolved.read_bytes()
+        size = resolved.stat().st_size
+        if size > self.max_file_bytes:
+            raise FileAccessError(f"file exceeds the {self.max_file_bytes}-byte experiment limit")
+        digest = hashlib.sha256()
+        with resolved.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(64 * 1024), b""):
+                digest.update(chunk)
         result = {
             "path": self._relative_name(resolved),
-            "size": len(payload),
-            "sha256": hashlib.sha256(payload).hexdigest(),
+            "size": size,
+            "sha256": digest.hexdigest(),
         }
         self.audit("file_info", {"path": result["path"]})
         return result
@@ -137,11 +153,7 @@ class ExperimentFileReader:
             if candidate.is_file():
                 files.append(candidate)
             else:
-                files.extend(
-                    item
-                    for item in sorted(candidate.rglob("*"))
-                    if item.is_file() and not item.is_symlink()
-                )
+                files.extend(self._discovered_files(candidate))
 
         results: list[dict[str, Any]] = []
         folded_query = query.casefold()

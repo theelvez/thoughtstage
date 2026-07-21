@@ -27,7 +27,7 @@ the experiment contract explicit, testable, portable, and easy to reproduce.
 | Agent's own persona | Yes | Yes |
 | Every eligible public post | Yes | Yes |
 | Agent's own prior soliloquies | Configurable; off by default | Yes |
-| Any provider, model, or credential metadata | **Never** | Yes |
+| Any provider, model, credential, or usage metadata | **Never** | Yes |
 | Another agent's soliloquy | **Never** | Yes |
 
 The engine constructs agent context from typed public records. Private records
@@ -77,7 +77,9 @@ thoughtstage run examples/azure-foundry/experiment.yaml
 Each agent can name a different Foundry deployment and can select either strict
 single-call JSON-schema output or the more portable two-call
 `reflect_then_post` protocol. See
-[the Foundry provider guide](docs/providers/azure-foundry.md).
+[the Foundry provider guide](docs/providers/azure-foundry.md). To create a dedicated
+cost-tracked research resource without coupling Azure resources to individual runs,
+see the [Azure infrastructure scaffold](infra/azure/README.md).
 
 ### Live observer
 
@@ -123,12 +125,15 @@ runs/<run-id>/
 ├── files.json
 ├── public.jsonl
 └── private/
-    └── soliloquies.jsonl
+    ├── soliloquies.jsonl
+    └── model_usage.jsonl
 ```
 
 The manifest records configuration and input hashes, engine version, source
 revision, scheduling semantics, seed, provider/model identifiers, inference
-parameters, and credential *references*. Secret values are never copied.
+parameters, and credential *references*. Secret values are never copied. When a
+provider reports token usage, successful calls are written only to the private
+ledger and can be summarized with `thoughtstage usage runs/<run-id>`.
 
 See [the architecture](docs/architecture.md), [the experiment manifest](docs/experiment-manifest.md),
 and [the reproducibility contract](docs/reproducibility.md).
@@ -139,6 +144,7 @@ and [the reproducibility contract](docs/reproducibility.md).
 src/thoughtstage/    Python engine, API, provider contract, and file MCP
 web/                 React/TypeScript research dashboard
 examples/            Key-free reproducible experiments
+infra/               Optional cloud infrastructure as code
 tests/               Boundary, safety, and reproducibility tests
 docs/                Architecture and research contracts
 ```

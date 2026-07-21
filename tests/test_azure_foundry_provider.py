@@ -15,18 +15,23 @@ from thoughtstage.providers.azure_foundry import (
 
 
 class FakeResponses:
-    def __init__(self, outputs: list[str]) -> None:
+    def __init__(self, outputs: list[str], usages: list[Any | None] | None = None) -> None:
         self.outputs = iter(outputs)
+        self.usages = iter(usages if usages is not None else [None] * len(outputs))
         self.calls: list[dict[str, Any]] = []
 
     def create(self, **kwargs: Any) -> Any:
         self.calls.append(kwargs)
-        return SimpleNamespace(output_text=next(self.outputs))
+        return SimpleNamespace(
+            id=f"response-{len(self.calls)}",
+            output_text=next(self.outputs),
+            usage=next(self.usages),
+        )
 
 
 class FakeClient:
-    def __init__(self, outputs: list[str]) -> None:
-        self.responses = FakeResponses(outputs)
+    def __init__(self, outputs: list[str], usages: list[Any | None] | None = None) -> None:
+        self.responses = FakeResponses(outputs, usages)
 
 
 class RecordingClientFactory:
@@ -37,6 +42,25 @@ class RecordingClientFactory:
     def __call__(self, **kwargs: Any) -> FakeClient:
         self.calls.append(kwargs)
         return self.client
+
+
+def fake_usage(
+    input_tokens: int,
+    output_tokens: int,
+    *,
+    cached_tokens: int = 0,
+    cache_write_tokens: int = 0,
+    reasoning_tokens: int = 0,
+) -> Any:
+    return SimpleNamespace(
+        input_tokens=input_tokens,
+        input_tokens_details=SimpleNamespace(
+            cached_tokens=cached_tokens, cache_write_tokens=cache_write_tokens
+        ),
+        output_tokens=output_tokens,
+        output_tokens_details=SimpleNamespace(reasoning_tokens=reasoning_tokens),
+        total_tokens=input_tokens + output_tokens,
+    )
 
 
 @pytest.fixture
@@ -86,15 +110,23 @@ def test_json_schema_mode_keeps_binding_metadata_out_of_model_context(
 ) -> None:
     monkeypatch.setenv("ATLAS_FOUNDRY_ENDPOINT", "https://resource.services.ai.azure.com")
     monkeypatch.setenv("ATLAS_FOUNDRY_KEY", "super-secret-key")
-    client = FakeClient(['{"post":"Public result","soliloquy":"Private reflection"}'])
+    client = FakeClient(
+        ['{"post":"Public result","soliloquy":"Private reflection"}'],
+        [fake_usage(120, 30, cached_tokens=20, reasoning_tokens=5)],
+    )
     factory = RecordingClientFactory(client)
 
     output = AzureFoundryProvider(client_factory=factory).generate(
         agent=foundry_agent(), context=context, seed=7
     )
 
-    assert output.post == "Public result"
-    assert output.soliloquy == "Private reflection"
+    assert output.output.post == "Public result"
+    assert output.output.soliloquy == "Private reflection"
+    assert output.usage[0].phase == "combined"
+    assert output.usage[0].input_tokens == 120
+    assert output.usage[0].cached_input_tokens == 20
+    assert output.usage[0].reasoning_tokens == 5
+    assert output.usage[0].response_id == "response-1"
     assert factory.calls == [
         {
             "api_key": "super-secret-key",
@@ -146,7 +178,10 @@ def test_reflect_then_post_is_explicitly_two_pass(
 ) -> None:
     monkeypatch.setenv("ATLAS_FOUNDRY_ENDPOINT", "https://resource.services.ai.azure.com")
     monkeypatch.setenv("ATLAS_FOUNDRY_KEY", "secret")
-    client = FakeClient(["A private current reflection.", "A public post."])
+    client = FakeClient(
+        ["A private current reflection.", "A public post."],
+        [fake_usage(40, 8), fake_usage(45, 10, reasoning_tokens=2)],
+    )
     factory = RecordingClientFactory(client)
     agent = foundry_agent(
         parameters={
@@ -160,8 +195,10 @@ def test_reflect_then_post_is_explicitly_two_pass(
         agent=agent, context=context, seed=11
     )
 
-    assert output.post == "A public post."
-    assert output.soliloquy == "A private current reflection."
+    assert output.output.post == "A public post."
+    assert output.output.soliloquy == "A private current reflection."
+    assert [item.phase for item in output.usage] == ["private", "public"]
+    assert [item.total_tokens for item in output.usage] == [48, 55]
     assert len(client.responses.calls) == 2
     private_call, public_call = client.responses.calls
     assert "temperature" not in private_call
@@ -217,3 +254,18 @@ def test_invalid_structured_response_is_rejected(
 
     with pytest.raises(AzureFoundryResponseError, match="invalid dual output"):
         provider.generate(agent=foundry_agent(), context=context, seed=0)
+
+
+@pytest.mark.parametrize("endpoint", ["", "   "])
+def test_empty_endpoint_names_environment_and_agent(
+    endpoint: str, context: AgentTurnContext, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("ATLAS_FOUNDRY_ENDPOINT", endpoint)
+    factory = RecordingClientFactory(FakeClient([]))
+
+    with pytest.raises(AzureFoundryConfigurationError, match="ATLAS_FOUNDRY_ENDPOINT.*atlas"):
+        AzureFoundryProvider(client_factory=factory).generate(
+            agent=foundry_agent(), context=context, seed=0
+        )
+
+    assert factory.calls == []
