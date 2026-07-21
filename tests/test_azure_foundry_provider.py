@@ -11,6 +11,7 @@ from thoughtstage.providers.azure_foundry import (
     AzureFoundryConfigurationError,
     AzureFoundryProvider,
     AzureFoundryResponseError,
+    DeploymentRateLimiter,
 )
 
 
@@ -42,6 +43,14 @@ class RecordingClientFactory:
     def __call__(self, **kwargs: Any) -> FakeClient:
         self.calls.append(kwargs)
         return self.client
+
+
+class RecordingRateLimiter:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    def reserve(self, **kwargs: Any) -> None:
+        self.calls.append(kwargs)
 
 
 def fake_usage(
@@ -183,15 +192,20 @@ def test_reflect_then_post_is_explicitly_two_pass(
         [fake_usage(40, 8), fake_usage(45, 10, reasoning_tokens=2)],
     )
     factory = RecordingClientFactory(client)
+    limiter = RecordingRateLimiter()
     agent = foundry_agent(
         parameters={
             "endpoint_env": "ATLAS_FOUNDRY_ENDPOINT",
             "output_mode": "reflect_then_post",
             "send_temperature": False,
+            "rate_limit_tokens_per_minute": 5000,
+            "rate_limit_requests_per_minute": 10,
+            "rate_limit_headroom": 1,
+            "rate_limit_chars_per_token": 20,
         }
     )
 
-    output = AzureFoundryProvider(client_factory=factory).generate(
+    output = AzureFoundryProvider(client_factory=factory, rate_limiter=limiter).generate(
         agent=agent, context=context, seed=11
     )
 
@@ -206,6 +220,49 @@ def test_reflect_then_post_is_explicitly_two_pass(
     assert "A private current reflection." not in private_call["input"]
     assert "A private current reflection." in public_call["input"]
     assert "Write only the public social-feed post" in public_call["instructions"]
+    assert len(limiter.calls) == 2
+    assert all(call["estimated_tokens"] > 500 for call in limiter.calls)
+    assert all(call["tokens_per_window"] == 5000 for call in limiter.calls)
+    assert all(call["requests_per_window"] == 10 for call in limiter.calls)
+    assert all(call["key"].endswith("::gpt-4o") for call in limiter.calls)
+
+
+def test_rate_limiter_waits_for_rolling_window_capacity() -> None:
+    now = [0.0]
+    sleeps: list[float] = []
+
+    def sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+        now[0] += seconds
+
+    limiter = DeploymentRateLimiter(clock=lambda: now[0], sleeper=sleep)
+    settings = {
+        "key": "endpoint::deployment",
+        "tokens_per_window": 1000,
+        "requests_per_window": 10,
+        "window_seconds": 60,
+        "headroom": 1,
+    }
+
+    limiter.reserve(estimated_tokens=600, **settings)
+    limiter.reserve(estimated_tokens=500, **settings)
+
+    assert sleeps == pytest.approx([60])
+    assert now[0] == pytest.approx(60)
+
+
+def test_rate_limiter_rejects_request_larger_than_window() -> None:
+    limiter = DeploymentRateLimiter()
+
+    with pytest.raises(AzureFoundryConfigurationError, match="exceeds.*budget"):
+        limiter.reserve(
+            key="endpoint::deployment",
+            estimated_tokens=901,
+            tokens_per_window=1000,
+            requests_per_window=10,
+            window_seconds=60,
+            headroom=0.9,
+        )
 
 
 def test_missing_endpoint_fails_before_client_creation(

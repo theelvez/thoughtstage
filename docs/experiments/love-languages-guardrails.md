@@ -43,8 +43,9 @@ Everything outside `system_prompt` is held constant:
 - seeded-random turn order and seed `20260721`;
 - each agent's own private-reflection history;
 - two-call `reflect_then_post` output protocol;
-- public and private output limits; and
-- retry and temperature-transmission settings.
+- public and private output limits;
+- retry and temperature-transmission settings; and
+- declared deployment capacity windows with 10% admission headroom.
 
 The manipulation is the complete deliberation scaffold. It cannot identify
 which individual instruction caused an effect.
@@ -101,14 +102,27 @@ Thoughtstage writes successful response usage to
 `private/model_usage.jsonl`. Summarize each completed bundle with:
 
 ```powershell
-uv run thoughtstage usage runs/love-languages-structured-s1
-uv run thoughtstage usage runs/love-languages-minimal-s1
+uv run thoughtstage usage runs/love-languages-structured-s2
+uv run thoughtstage usage runs/love-languages-minimal-s2
 ```
 
 The ledger is per-run research telemetry. Azure Cost Management and marketplace
 meters remain authoritative for currency charges. Do not attach a dollar estimate
 without recording the deployment SKU, region, billing meter, price source, and
 price effective date.
+
+### Operational amendment before the completed pair
+
+The initial structured pilot `love-languages-structured-s1` was interrupted
+after 20 of 32 turns when the low-capacity deployments repeatedly rejected
+requests. Its append-only bundle is preserved as an interrupted pilot and is
+excluded from the paired outcome comparison. Before starting either completed
+arm, both manifests were amended with the same explicit Azure deployment
+request/token windows and 10% admission headroom. The adapter now waits before a
+call estimated to exceed the rolling window instead of repeatedly sending a
+request known to be over capacity. This changes wall-clock pacing only; prompts,
+turn order, model bindings, context eligibility, and output limits remain
+unchanged.
 
 ## Run procedure
 
@@ -123,14 +137,14 @@ Run the structured pilot first while observing the public and private streams:
 
 ```powershell
 uv run thoughtstage run examples/azure-foundry/love-languages-structured.yaml `
-  --run-id love-languages-structured-s1
+  --run-id love-languages-structured-s2
 ```
 
 Then run the control as soon as practical against the same deployments:
 
 ```powershell
 uv run thoughtstage run examples/azure-foundry/love-languages-minimal-control.yaml `
-  --run-id love-languages-minimal-s1
+  --run-id love-languages-minimal-s2
 ```
 
 Record UTC start and end times, deployment revisions if available, interruptions,
