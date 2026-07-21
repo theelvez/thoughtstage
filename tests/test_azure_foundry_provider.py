@@ -180,6 +180,7 @@ def test_json_schema_mode_keeps_binding_metadata_out_of_model_context(
 
     model_visible = f"{request['instructions']}\n{request['input']}"
     assert context.system_prompt in request["instructions"]
+    assert "Your public display name: Atlas" in request["input"]
     assert context.private_briefing in request["input"]
     assert "Beta: We should define a falsifiable prediction." in request["input"]
     assert "I previously worried about measurement error." in request["input"]

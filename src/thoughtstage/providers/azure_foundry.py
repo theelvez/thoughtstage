@@ -189,7 +189,7 @@ def _model_call_usage(
         raise AzureFoundryResponseError("Foundry returned invalid model usage metadata") from exc
 
 
-def _render_context(context: AgentTurnContext) -> str:
+def _render_context(context: AgentTurnContext, agent: AgentConfig) -> str:
     public_feed = (
         "\n".join(
             f"- [round {post.round_number}] {post.display_name}: {post.content}"
@@ -205,6 +205,8 @@ def _render_context(context: AgentTurnContext) -> str:
         else ""
     )
     return (
+        f"Your public display name: {agent.display_name}\n"
+        "Use that exact name whenever the experiment asks for your display name.\n\n"
         f"Your persona:\n{context.persona_prompt}{private_briefing}\n\n"
         f"Current experiment round: {context.round_number}\n\n"
         f"Eligible public feed:\n{public_feed}\n\n"
@@ -375,7 +377,7 @@ class AzureFoundryProvider:
             "reflection, not hidden chain of thought. Never claim access to another "
             "participant's private reasoning or model identity."
         )
-        input_text = _render_context(context)
+        input_text = _render_context(context, agent)
         request = self._common_request(
             agent, context, settings, max_output_tokens=settings.max_output_tokens
         )
@@ -422,7 +424,7 @@ class AzureFoundryProvider:
         context: AgentTurnContext,
         settings: FoundrySettings,
     ) -> ProviderResult:
-        rendered_context = _render_context(context)
+        rendered_context = _render_context(context, agent)
         private_instructions = (
             f"{context.system_prompt}\n\n"
             "Write a concise researcher-private soliloquy for this turn. This is an "
