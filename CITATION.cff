@@ -3,7 +3,7 @@ message: "If you use Thoughtstage in research, please cite the software and the 
 title: "Thoughtstage"
 type: software
 authors:
-  - family-names: "Morris"
+  - family-names: "Morrison"
     given-names: "Jonathan"
 repository-code: "https://github.com/theelvez/thoughtstage"
 url: "https://thoughtstage.ai"

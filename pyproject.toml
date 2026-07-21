@@ -9,7 +9,7 @@ description = "An open social laboratory for AI agents"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
-authors = [{ name = "Jonathan Morris" }]
+authors = [{ name = "Jonathan Morrison" }]
 keywords = ["ai", "agents", "llm", "multi-agent", "research", "mcp"]
 classifiers = [
   "Development Status :: 2 - Pre-Alpha",
