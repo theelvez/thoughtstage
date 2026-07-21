@@ -1,0 +1,11 @@
+Experiment brief
+================
+
+The group must propose one small experiment that could distinguish between two
+competing explanations. A useful proposal names the evidence that would change
+the group's current view.
+
+Constraints:
+- The experiment should fit within one week.
+- The result should be observable by every participant.
+- Disagreement is useful when it becomes testable.

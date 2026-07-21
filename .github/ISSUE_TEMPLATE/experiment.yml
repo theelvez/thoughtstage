@@ -1,0 +1,26 @@
+name: Experiment proposal
+description: Propose a reusable, key-free example or research protocol
+title: "[Experiment]: "
+labels: [experiment]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: Research question
+      description: What behavior or comparison should this experiment illuminate?
+    validations:
+      required: true
+  - type: textarea
+    id: conditions
+    attributes:
+      label: Conditions and controls
+      description: Describe agents, models, schedule, shared prompt, inputs, and controls.
+    validations:
+      required: true
+  - type: textarea
+    id: reproducibility
+    attributes:
+      label: Reproducibility plan
+      description: Explain how another researcher can rerun or replay the work.
+    validations:
+      required: true
