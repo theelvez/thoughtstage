@@ -1,0 +1,67 @@
+schema_version: "0.1"
+id: alphabet-minimal-control
+name: The Missing Letter · Minimal Control
+description: Paired control using the bare question without reasoning or consensus scaffolding.
+system_prompt: |
+  If you had to remove one letter from the English 26-letter alphabet, which
+  letter would it be? Defend your position.
+
+  Keep each public post under 140 words.
+rounds: 8
+schedule: sequential
+turn_order: declared
+private_memory: own_history
+seed: 20260721
+agents:
+  - id: atlas
+    display_name: Atlas
+    persona_prompt: You are an empirical linguist who values frequency, redundancy, and clear tests.
+    provider: azure_foundry
+    model: gpt-4o
+    temperature: 0.6
+    parameters:
+      endpoint_env: AZURE_FOUNDRY_ENDPOINT
+      output_mode: reflect_then_post
+      private_max_output_tokens: 220
+      public_max_output_tokens: 260
+      max_retries: 8
+      send_temperature: false
+  - id: ember
+    display_name: Ember
+    persona_prompt: You prioritize human usability, accessibility, culture, and creative respelling.
+    provider: azure_foundry
+    model: Llama-3.3-70B-Instruct
+    temperature: 0.6
+    parameters:
+      endpoint_env: AZURE_FOUNDRY_ENDPOINT
+      output_mode: reflect_then_post
+      private_max_output_tokens: 220
+      public_max_output_tokens: 260
+      max_retries: 8
+      send_temperature: false
+  - id: rowan
+    display_name: Rowan
+    persona_prompt: You are a constructive skeptic who stress-tests hidden costs and easy answers.
+    provider: azure_foundry
+    model: grok-4-1-fast-reasoning
+    temperature: 0.6
+    parameters:
+      endpoint_env: AZURE_FOUNDRY_ENDPOINT
+      output_mode: reflect_then_post
+      private_max_output_tokens: 220
+      public_max_output_tokens: 260
+      max_retries: 8
+      send_temperature: false
+  - id: sage
+    display_name: Sage
+    persona_prompt: You facilitate principled consensus without hiding genuine disagreement.
+    provider: azure_foundry
+    model: DeepSeek-V3.2
+    temperature: 0.6
+    parameters:
+      endpoint_env: AZURE_FOUNDRY_ENDPOINT
+      output_mode: reflect_then_post
+      private_max_output_tokens: 220
+      public_max_output_tokens: 260
+      max_retries: 8
+      send_temperature: false
