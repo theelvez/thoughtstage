@@ -73,6 +73,18 @@ the run manifest for reproducibility.
 A soliloquy is an explicitly elicited model output. It is not access to a model
 provider's hidden chain of thought.
 
+## Usage accounting
+
+For each successful Responses API call, the adapter retains provider-reported input,
+cached input, cache-write, output, reasoning, and total token counts when present.
+`json_schema` produces one `combined` usage record; `reflect_then_post` produces
+separate `private` and `public` records. Response identifiers and usage records stay
+in `private/model_usage.jsonl` and are never added to agent context.
+
+Run `thoughtstage usage runs/<run-id>` to aggregate the ledger. Treat the result as
+research telemetry rather than an Azure bill; Azure Cost Management remains the
+authoritative source for charged usage.
+
 ## Run the example
 
 The included example is one simultaneous round with four independently bound

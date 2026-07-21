@@ -32,6 +32,9 @@ class PrivateMemory(StrEnum):
     OWN_HISTORY = "own_history"
 
 
+ModelUsagePhase = Literal["combined", "private", "public"]
+
+
 class AgentConfig(StrictModel):
     id: str = Field(pattern=r"^[a-z][a-z0-9_-]{1,63}$")
     display_name: str = Field(min_length=1, max_length=80)
@@ -97,9 +100,45 @@ class AgentTurnContext(StrictModel):
     available_files: tuple[str, ...] = ()
 
 
+class ModelCallUsage(StrictModel):
+    phase: ModelUsagePhase
+    input_tokens: int = Field(ge=0)
+    cached_input_tokens: int = Field(default=0, ge=0)
+    cache_write_tokens: int = Field(default=0, ge=0)
+    output_tokens: int = Field(ge=0)
+    reasoning_tokens: int = Field(default=0, ge=0)
+    total_tokens: int = Field(ge=0)
+    response_id: str | None = Field(default=None, max_length=256)
+
+
+class ModelUsageEvent(StrictModel):
+    event_id: str
+    post_event_id: str
+    sequence: int = Field(ge=1)
+    call_index: int = Field(ge=1)
+    experiment_id: str
+    round_number: int = Field(ge=1)
+    agent_id: str
+    provider: str
+    model: str
+    phase: ModelUsagePhase
+    input_tokens: int = Field(ge=0)
+    cached_input_tokens: int = Field(default=0, ge=0)
+    cache_write_tokens: int = Field(default=0, ge=0)
+    output_tokens: int = Field(ge=0)
+    reasoning_tokens: int = Field(default=0, ge=0)
+    total_tokens: int = Field(ge=0)
+    response_id: str | None = Field(default=None, max_length=256)
+
+
 class ModelOutput(StrictModel):
     post: str = Field(min_length=1)
     soliloquy: str = Field(min_length=1)
+
+
+class ProviderResult(StrictModel):
+    output: ModelOutput
+    usage: tuple[ModelCallUsage, ...] = ()
 
 
 class RunResult(StrictModel):
@@ -107,3 +146,4 @@ class RunResult(StrictModel):
     bundle_path: str
     public_posts: tuple[PublicPost, ...]
     soliloquies: tuple[Soliloquy, ...]
+    model_usage: tuple[ModelUsageEvent, ...] = ()

@@ -61,6 +61,28 @@ def _make_live_bundle(root: Path, run_id: str = "live-run") -> Path:
     (bundle / "private" / "soliloquies.jsonl").write_text(
         json.dumps(soliloquy) + "\n{partial", encoding="utf-8"
     )
+    usage = {
+        "event_id": "usage-r0001-atlas-000001-call01",
+        "post_event_id": post["event_id"],
+        "sequence": 1,
+        "call_index": 1,
+        "experiment_id": "observer-test",
+        "round_number": 1,
+        "agent_id": "atlas",
+        "provider": "azure_foundry",
+        "model": "gpt-4o",
+        "phase": "combined",
+        "input_tokens": 120,
+        "cached_input_tokens": 20,
+        "cache_write_tokens": 0,
+        "output_tokens": 30,
+        "reasoning_tokens": 5,
+        "total_tokens": 150,
+        "response_id": "response-1",
+    }
+    (bundle / "private" / "model_usage.jsonl").write_text(
+        json.dumps(usage) + "\n", encoding="utf-8"
+    )
     return bundle
 
 
@@ -71,7 +93,11 @@ def test_list_run_bundles_uses_live_stream_counts(tmp_path: Path) -> None:
 
     assert len(runs) == 1
     assert runs[0]["status"] == "running"
-    assert runs[0]["counts"] == {"public_posts": 1, "soliloquies": 1}
+    assert runs[0]["counts"] == {
+        "public_posts": 1,
+        "soliloquies": 1,
+        "model_calls": 1,
+    }
 
 
 def test_read_run_bundle_preserves_separate_streams(tmp_path: Path) -> None:
@@ -82,6 +108,9 @@ def test_read_run_bundle_preserves_separate_streams(tmp_path: Path) -> None:
     assert run["posts"][0]["content"] == "A public proposal."
     assert run["soliloquies"][0]["content"] == "A private reflection."
     assert "soliloquies" not in run["posts"][0]
+    assert run["model_usage"][0]["response_id"] == "response-1"
+    assert run["usage_summary"]["totals"]["model_calls"] == 1
+    assert run["usage_summary"]["by_model"]["azure_foundry:gpt-4o"]["total_tokens"] == 150
 
 
 def test_run_id_cannot_traverse_outside_root(tmp_path: Path) -> None:
@@ -102,6 +131,8 @@ def test_observer_api_lists_and_reads_live_run(
     assert listing.json()["runs"][0]["counts"]["public_posts"] == 1
     assert detail.status_code == 200
     assert detail.json()["soliloquies"][0]["post_event_id"].startswith("post-")
+    assert detail.json()["counts"]["model_calls"] == 1
+    assert detail.json()["usage_summary"]["totals"]["input_tokens"] == 120
 
 
 def test_observer_api_returns_not_found(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
