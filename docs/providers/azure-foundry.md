@@ -52,6 +52,7 @@ Supported provider parameters are:
 | `private_max_output_tokens` | `500` | Soliloquy limit in `reflect_then_post` mode |
 | `public_max_output_tokens` | `500` | Post limit in `reflect_then_post` mode |
 | `timeout_seconds` | `120` | Per-request client timeout |
+| `max_retries` | `8` | Transport retries with backoff for transient failures and rate limits |
 | `send_temperature` | `true` | Whether to send the manifest temperature to the model |
 
 Unknown parameters are rejected so a misspelling cannot silently change the

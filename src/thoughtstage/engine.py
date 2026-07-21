@@ -20,7 +20,7 @@ from thoughtstage.models import (
 from thoughtstage.providers.azure_foundry import AzureFoundryProvider
 from thoughtstage.providers.base import Provider
 from thoughtstage.providers.mock import MockProvider
-from thoughtstage.reproducibility import RunBundleWriter
+from thoughtstage.reproducibility import RunBundleResumeError, RunBundleWriter
 
 
 class UnknownProviderError(ValueError):
@@ -44,29 +44,84 @@ class ExperimentEngine:
             random.Random(seed + round_number).shuffle(ordered)
         return ordered
 
+    @staticmethod
+    def _validate_replayed_turn(
+        *,
+        post: PublicPost,
+        soliloquy: Soliloquy,
+        agent: AgentConfig,
+        experiment_id: str,
+        round_number: int,
+        sequence: int,
+    ) -> None:
+        expected = (experiment_id, round_number, agent.id, sequence)
+        actual_post = (post.experiment_id, post.round_number, post.agent_id, post.sequence)
+        actual_private = (
+            soliloquy.experiment_id,
+            soliloquy.round_number,
+            soliloquy.agent_id,
+            soliloquy.sequence,
+        )
+        if actual_post != expected or actual_private != expected:
+            raise RunBundleResumeError("existing run event prefix does not match the experiment")
+        if soliloquy.post_event_id != post.event_id:
+            raise RunBundleResumeError("existing private event does not match its public post")
+
     def run(
         self,
         loaded: LoadedExperiment,
         *,
         output_root: str | Path = "runs",
         run_id: str | None = None,
+        resume_path: str | Path | None = None,
     ) -> RunResult:
         config = loaded.config
-        writer = RunBundleWriter(loaded, output_root, run_id=run_id)
+        if resume_path is None:
+            writer = RunBundleWriter(loaded, output_root, run_id=run_id)
+            existing_posts: list[PublicPost] = []
+            existing_soliloquies: list[Soliloquy] = []
+        else:
+            writer = RunBundleWriter.resume(loaded, resume_path)
+            existing_posts, existing_soliloquies = writer.existing_events()
         public_posts: list[PublicPost] = []
         soliloquies: list[Soliloquy] = []
         private_by_agent: dict[str, list[str]] = {agent.id: [] for agent in config.agents}
         available_files = tuple(item["path"] for item in writer.files)
+        replay_index = 0
 
         for round_number in range(1, config.rounds + 1):
             round_start_feed = tuple(public_posts)
             pending_posts: list[PublicPost] = []
             pending_soliloquies: list[Soliloquy] = []
+            pending_generated: list[bool] = []
             ordered_agents = self._order_agents(
                 config.agents, config.turn_order, config.seed, round_number
             )
 
             for agent in ordered_agents:
+                sequence = len(public_posts) + len(pending_posts) + 1
+                if replay_index < len(existing_posts):
+                    post = existing_posts[replay_index]
+                    soliloquy = existing_soliloquies[replay_index]
+                    self._validate_replayed_turn(
+                        post=post,
+                        soliloquy=soliloquy,
+                        agent=agent,
+                        experiment_id=config.id,
+                        round_number=round_number,
+                        sequence=sequence,
+                    )
+                    replay_index += 1
+                    private_by_agent[agent.id].append(soliloquy.content)
+                    if config.schedule is Schedule.SIMULTANEOUS:
+                        pending_posts.append(post)
+                        pending_soliloquies.append(soliloquy)
+                        pending_generated.append(False)
+                    else:
+                        public_posts.append(post)
+                        soliloquies.append(soliloquy)
+                    continue
+
                 provider = self.providers.get(agent.provider)
                 if provider is None:
                     raise UnknownProviderError(
@@ -96,7 +151,6 @@ class ExperimentEngine:
                     context=context,
                     seed=config.seed,
                 )
-                sequence = len(public_posts) + len(pending_posts) + 1
                 post_event_id = f"post-r{round_number:04d}-{agent.id}-{sequence:06d}"
                 post = PublicPost(
                     event_id=post_event_id,
@@ -121,6 +175,7 @@ class ExperimentEngine:
                 if config.schedule is Schedule.SIMULTANEOUS:
                     pending_posts.append(post)
                     pending_soliloquies.append(soliloquy)
+                    pending_generated.append(True)
                 else:
                     public_posts.append(post)
                     soliloquies.append(soliloquy)
@@ -128,11 +183,19 @@ class ExperimentEngine:
                     writer.write_soliloquy(soliloquy)
 
             if config.schedule is Schedule.SIMULTANEOUS:
-                for post, soliloquy in zip(pending_posts, pending_soliloquies, strict=True):
+                for post, soliloquy, generated in zip(
+                    pending_posts, pending_soliloquies, pending_generated, strict=True
+                ):
                     public_posts.append(post)
                     soliloquies.append(soliloquy)
-                    writer.write_post(post)
-                    writer.write_soliloquy(soliloquy)
+                    if generated:
+                        writer.write_post(post)
+                        writer.write_soliloquy(soliloquy)
+
+        if replay_index != len(existing_posts):
+            raise RunBundleResumeError(
+                "run bundle contains more events than the experiment declares"
+            )
 
         writer.finish(public_posts=len(public_posts), soliloquies=len(soliloquies))
         return RunResult(

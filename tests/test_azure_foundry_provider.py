@@ -100,6 +100,7 @@ def test_json_schema_mode_keeps_binding_metadata_out_of_model_context(
             "api_key": "super-secret-key",
             "base_url": "https://resource.services.ai.azure.com/openai/v1/",
             "timeout": 120.0,
+            "max_retries": 8,
         }
     ]
     request = client.responses.calls[0]

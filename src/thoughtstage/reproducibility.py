@@ -11,10 +11,16 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from pydantic import ValidationError
+
 from thoughtstage import __version__
 from thoughtstage.config import LoadedExperiment
 from thoughtstage.files import ExperimentFileReader
 from thoughtstage.models import PublicPost, Soliloquy
+
+
+class RunBundleResumeError(ValueError):
+    """Raised when an interrupted run cannot be resumed safely."""
 
 
 def sha256_bytes(payload: bytes) -> str:
@@ -102,6 +108,90 @@ class RunBundleWriter:
             "counts": {"public_posts": 0, "soliloquies": 0},
         }
         self._write_manifest()
+
+    @classmethod
+    def resume(cls, loaded: LoadedExperiment, bundle_path: str | Path) -> RunBundleWriter:
+        """Open an interrupted bundle after verifying its immutable prefix."""
+
+        try:
+            path = Path(bundle_path).resolve(strict=True)
+        except FileNotFoundError as exc:
+            raise RunBundleResumeError("run bundle was not found") from exc
+        if not path.is_dir():
+            raise RunBundleResumeError("run bundle must be a directory")
+        try:
+            manifest = json.loads((path / "manifest.json").read_text(encoding="utf-8"))
+            files = json.loads((path / "files.json").read_text(encoding="utf-8"))
+        except (FileNotFoundError, json.JSONDecodeError) as exc:
+            raise RunBundleResumeError("run bundle metadata is missing or invalid") from exc
+        if not isinstance(manifest, dict) or not isinstance(files, list):
+            raise RunBundleResumeError("run bundle metadata has an invalid shape")
+        if manifest.get("status") == "completed":
+            raise RunBundleResumeError("run bundle is already completed")
+        if manifest.get("run_id") != path.name:
+            raise RunBundleResumeError("run id does not match the bundle directory")
+        expected_hash = sha256_bytes(loaded.source_bytes)
+        if manifest.get("experiment", {}).get("config_sha256") != expected_hash:
+            raise RunBundleResumeError("experiment manifest does not match the run bundle")
+
+        self = cls.__new__(cls)
+        self.run_id = path.name
+        self.path = path
+        self.files = files
+        self.manifest = manifest
+        posts, soliloquies = self.existing_events()
+        if len(posts) != len(soliloquies):
+            raise RunBundleResumeError("public and private event counts do not match")
+
+        resumptions = self.manifest.setdefault("resumptions", [])
+        if not isinstance(resumptions, list):
+            raise RunBundleResumeError("run bundle resumptions metadata is invalid")
+        resumptions.append(
+            {
+                "resumed_at": datetime.now(UTC).isoformat(),
+                "thoughtstage_version": __version__,
+                "source_revision": _source_revision(loaded.source_path.parent),
+                "completed_prefix": len(posts),
+            }
+        )
+        self.manifest["status"] = "running"
+        self.manifest["completed_at"] = None
+        self.manifest["counts"] = {
+            "public_posts": len(posts),
+            "soliloquies": len(soliloquies),
+        }
+        self._write_manifest()
+        return self
+
+    def existing_events(self) -> tuple[list[PublicPost], list[Soliloquy]]:
+        """Load the typed, append-only event prefix from this bundle."""
+
+        def records(path: Path) -> list[dict[str, Any]]:
+            if not path.exists():
+                return []
+            values: list[dict[str, Any]] = []
+            try:
+                for line in path.read_text(encoding="utf-8").splitlines():
+                    if line.strip():
+                        value = json.loads(line)
+                        if not isinstance(value, dict):
+                            raise RunBundleResumeError("run event is not an object")
+                        values.append(value)
+            except json.JSONDecodeError as exc:
+                raise RunBundleResumeError("run event stream contains invalid JSON") from exc
+            return values
+
+        try:
+            posts = [
+                PublicPost.model_validate(value) for value in records(self.path / "public.jsonl")
+            ]
+            soliloquies = [
+                Soliloquy.model_validate(value)
+                for value in records(self.path / "private" / "soliloquies.jsonl")
+            ]
+        except ValidationError as exc:
+            raise RunBundleResumeError("run event stream violates its schema") from exc
+        return posts, soliloquies
 
     @staticmethod
     def _write_json(path: Path, value: Any) -> None:

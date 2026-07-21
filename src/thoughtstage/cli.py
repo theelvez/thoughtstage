@@ -11,6 +11,7 @@ import typer
 from thoughtstage import __version__
 from thoughtstage.config import ExperimentLoadError, load_experiment
 from thoughtstage.engine import ExperimentEngine
+from thoughtstage.reproducibility import RunBundleResumeError
 
 app = typer.Typer(
     name="thoughtstage",
@@ -59,6 +60,37 @@ def run_experiment(
     typer.echo(
         json.dumps(
             {
+                "run_id": result.run_id,
+                "bundle": result.bundle_path,
+                "public_posts": len(result.public_posts),
+                "soliloquies": len(result.soliloquies),
+            },
+            indent=2,
+        )
+    )
+
+
+@app.command("resume")
+def resume_experiment(
+    bundle: Annotated[Path, typer.Argument(exists=True, file_okay=False, readable=True)],
+    manifest: Annotated[
+        Path | None,
+        typer.Option("--manifest", exists=True, dir_okay=False, readable=True),
+    ] = None,
+) -> None:
+    """Resume an interrupted run without repeating its completed event prefix."""
+
+    source = manifest or bundle / "experiment.yaml"
+    try:
+        loaded = load_experiment(source)
+        result = ExperimentEngine().run(loaded, resume_path=bundle)
+    except (ExperimentLoadError, RunBundleResumeError) as exc:
+        typer.echo(f"Cannot resume experiment: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(
+        json.dumps(
+            {
+                "resumed": True,
                 "run_id": result.run_id,
                 "bundle": result.bundle_path,
                 "public_posts": len(result.public_posts),
