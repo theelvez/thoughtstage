@@ -127,9 +127,10 @@ class AzureFoundryProvider:
 
     def _client(self, agent: AgentConfig, settings: FoundrySettings) -> _FoundryClient:
         endpoint = os.getenv(settings.endpoint_env)
-        if endpoint is None:
+        if endpoint is None or not endpoint.strip():
             raise AzureFoundryConfigurationError(
-                f"environment variable {settings.endpoint_env!r} is required for agent {agent.id!r}"
+                f"environment variable {settings.endpoint_env!r} must contain a Foundry endpoint "
+                f"for agent {agent.id!r}"
             )
 
         if agent.credential_env is None:

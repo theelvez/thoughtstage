@@ -44,6 +44,8 @@ def test_enforces_line_and_size_limits(tmp_path: Path) -> None:
 
     with pytest.raises(FileAccessError, match="byte"):
         reader.read_text("large.txt")
+    with pytest.raises(FileAccessError, match="byte"):
+        reader.file_info("large.txt")
 
     reader = ExperimentFileReader(tmp_path, max_file_bytes=100, max_read_lines=1)
     with pytest.raises(FileAccessError, match="at most 1"):
@@ -88,3 +90,19 @@ def test_rejects_symlink_when_supported(tmp_path: Path) -> None:
 
     with pytest.raises(FileAccessError, match="symlink"):
         ExperimentFileReader(tmp_path).read_text("link.txt")
+
+
+def test_discovery_omits_files_beneath_symlinked_directories(tmp_path: Path) -> None:
+    outside = tmp_path.parent / f"{tmp_path.name}-outside"
+    outside.mkdir()
+    (outside / "secret.txt").write_text("do not enumerate", encoding="utf-8")
+    link = tmp_path / "linked"
+    try:
+        link.symlink_to(outside, target_is_directory=True)
+    except OSError:
+        pytest.skip("directory symlink creation is not available")
+
+    reader = ExperimentFileReader(tmp_path)
+
+    assert reader.list_files() == []
+    assert reader.search_text("do not enumerate") == []

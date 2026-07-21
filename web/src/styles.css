@@ -348,7 +348,7 @@ footer a {
 
 @media (max-width: 520px) {
   .shell {
-    width: min(100% - 24px, 1180px);
+    width: min(1180px, calc(100% - 24px));
   }
 
   .hero h1 {

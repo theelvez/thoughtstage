@@ -139,7 +139,7 @@ class RunBundleWriter:
         self.path = path
         self.files = files
         self.manifest = manifest
-        posts, soliloquies = self.existing_events()
+        posts, soliloquies = self.existing_events(repair_trailing_partial=True)
         if len(posts) != len(soliloquies):
             raise RunBundleResumeError("public and private event counts do not match")
 
@@ -163,22 +163,43 @@ class RunBundleWriter:
         self._write_manifest()
         return self
 
-    def existing_events(self) -> tuple[list[PublicPost], list[Soliloquy]]:
+    def existing_events(
+        self,
+        *,
+        repair_trailing_partial: bool = False,
+    ) -> tuple[list[PublicPost], list[Soliloquy]]:
         """Load the typed, append-only event prefix from this bundle."""
 
         def records(path: Path) -> list[dict[str, Any]]:
             if not path.exists():
                 return []
+            payload = path.read_bytes()
+            raw_lines = payload.splitlines(keepends=True)
             values: list[dict[str, Any]] = []
-            try:
-                for line in path.read_text(encoding="utf-8").splitlines():
-                    if line.strip():
-                        value = json.loads(line)
-                        if not isinstance(value, dict):
-                            raise RunBundleResumeError("run event is not an object")
-                        values.append(value)
-            except json.JSONDecodeError as exc:
-                raise RunBundleResumeError("run event stream contains invalid JSON") from exc
+            for index, raw_line in enumerate(raw_lines):
+                is_final = index == len(raw_lines) - 1
+                terminated = raw_line.endswith((b"\n", b"\r"))
+                content = raw_line.strip()
+                if not content:
+                    if repair_trailing_partial and is_final and not terminated:
+                        with path.open("r+b") as stream:
+                            stream.truncate(len(payload) - len(raw_line))
+                    continue
+                try:
+                    line = content.decode("utf-8")
+                    value = json.loads(line)
+                except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                    if repair_trailing_partial and is_final and not terminated:
+                        with path.open("r+b") as stream:
+                            stream.truncate(len(payload) - len(raw_line))
+                        return values
+                    raise RunBundleResumeError("run event stream contains invalid JSON") from exc
+                if not isinstance(value, dict):
+                    raise RunBundleResumeError("run event is not an object")
+                values.append(value)
+                if repair_trailing_partial and is_final and not terminated:
+                    with path.open("ab") as stream:
+                        stream.write(b"\n")
             return values
 
         try:
