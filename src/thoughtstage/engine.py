@@ -17,7 +17,9 @@ from thoughtstage.models import (
     Soliloquy,
     TurnOrder,
 )
-from thoughtstage.providers import MockProvider, Provider
+from thoughtstage.providers.azure_foundry import AzureFoundryProvider
+from thoughtstage.providers.base import Provider
+from thoughtstage.providers.mock import MockProvider
 from thoughtstage.reproducibility import RunBundleWriter
 
 
@@ -27,7 +29,10 @@ class UnknownProviderError(ValueError):
 
 class ExperimentEngine:
     def __init__(self, providers: Mapping[str, Provider] | None = None) -> None:
-        self.providers: dict[str, Provider] = {"mock": MockProvider()}
+        self.providers: dict[str, Provider] = {
+            "azure_foundry": AzureFoundryProvider(),
+            "mock": MockProvider(),
+        }
         if providers:
             self.providers.update(providers)
 

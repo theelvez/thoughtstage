@@ -48,9 +48,13 @@ reference, temperature, and provider-specific parameters. Duplicate bindings are
 allowed. Credential values are resolved only inside an adapter and must never be
 inserted into an agent context or run bundle.
 
-Only the deterministic `mock` provider ships in the initial foundation. Real
-provider adapters will be added behind the same contract with key-free contract
-tests.
+The deterministic `mock` provider supports key-free examples and contract tests.
+The `azure_foundry` provider uses Microsoft Foundry's GA OpenAI/v1 Responses API
+with either Microsoft Entra ID or a referenced API-key environment variable. It
+supports a strict single-call JSON-schema mode and an explicit two-call
+`reflect_then_post` mode for models without structured-output support. The chosen
+mode is stored in provider parameters so the generation protocol remains part of
+the reproducibility record.
 
 ## Interpreting a soliloquy
 
