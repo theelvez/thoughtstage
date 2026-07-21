@@ -77,7 +77,9 @@ thoughtstage run examples/azure-foundry/experiment.yaml
 Each agent can name a different Foundry deployment and can select either strict
 single-call JSON-schema output or the more portable two-call
 `reflect_then_post` protocol. See
-[the Foundry provider guide](docs/providers/azure-foundry.md).
+[the Foundry provider guide](docs/providers/azure-foundry.md). To create a dedicated
+cost-tracked research resource without coupling Azure resources to individual runs,
+see the [Azure infrastructure scaffold](infra/azure/README.md).
 
 ### Live observer
 
@@ -142,6 +144,7 @@ and [the reproducibility contract](docs/reproducibility.md).
 src/thoughtstage/    Python engine, API, provider contract, and file MCP
 web/                 React/TypeScript research dashboard
 examples/            Key-free reproducible experiments
+infra/               Optional cloud infrastructure as code
 tests/               Boundary, safety, and reproducibility tests
 docs/                Architecture and research contracts
 ```
