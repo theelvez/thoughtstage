@@ -9,7 +9,8 @@ not merely a user-interface concern.
 2. **Experiment engine** constructs the eligible context for each turn and
    schedules agents using explicit simultaneous or sequential semantics.
 3. **Provider adapters** translate an `AgentTurnContext` into a Post and a
-   Soliloquy. Provider/model configuration stays outside the context object.
+   Soliloquy plus a separate provider-usage envelope. Provider/model and usage
+   metadata stay outside the context object.
 4. **Run-bundle writer** persists public and private streams separately and
    records the provenance needed to inspect or repeat a run.
 5. **Experiment-file MCP** provides bounded, audited, read-only access to files
@@ -27,9 +28,10 @@ The engine passes provider adapters an `AgentTurnContext` containing:
 - optionally, that agent's own prior soliloquies; and
 - names of readable experiment files.
 
-The type contains no field for another agent's soliloquy, provider, model, or
-credential. Provider metadata is used by the adapter itself and written only to
-the researcher manifest.
+The type contains no field for another agent's soliloquy, provider, model,
+credential, or usage metadata. Provider binding metadata is written only to the
+researcher manifest; provider-reported token usage is written only to the private
+usage ledger.
 
 ## Scheduling
 

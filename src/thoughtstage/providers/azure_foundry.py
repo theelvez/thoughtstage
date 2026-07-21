@@ -11,7 +11,14 @@ from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 from openai import OpenAI
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from thoughtstage.models import AgentConfig, AgentTurnContext, ModelOutput
+from thoughtstage.models import (
+    AgentConfig,
+    AgentTurnContext,
+    ModelCallUsage,
+    ModelOutput,
+    ModelUsagePhase,
+    ProviderResult,
+)
 
 DEFAULT_ENDPOINT_ENV = "AZURE_FOUNDRY_ENDPOINT"
 FOUNDRY_TOKEN_SCOPE = "https://ai.azure.com/.default"
@@ -74,6 +81,30 @@ def _response_text(response: Any) -> str:
     if not isinstance(value, str) or not value.strip():
         raise AzureFoundryResponseError("Foundry returned no text output")
     return value.strip()
+
+
+def _model_call_usage(
+    response: Any,
+    phase: ModelUsagePhase,
+) -> ModelCallUsage | None:
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        return None
+    input_details = getattr(usage, "input_tokens_details", None)
+    output_details = getattr(usage, "output_tokens_details", None)
+    try:
+        return ModelCallUsage(
+            phase=phase,
+            input_tokens=usage.input_tokens,
+            cached_input_tokens=getattr(input_details, "cached_tokens", 0) or 0,
+            cache_write_tokens=getattr(input_details, "cache_write_tokens", 0) or 0,
+            output_tokens=usage.output_tokens,
+            reasoning_tokens=getattr(output_details, "reasoning_tokens", 0) or 0,
+            total_tokens=usage.total_tokens,
+            response_id=getattr(response, "id", None),
+        )
+    except (AttributeError, TypeError, ValidationError) as exc:
+        raise AzureFoundryResponseError("Foundry returned invalid model usage metadata") from exc
 
 
 def _render_context(context: AgentTurnContext) -> str:
@@ -174,7 +205,7 @@ class AzureFoundryProvider:
         agent: AgentConfig,
         context: AgentTurnContext,
         settings: FoundrySettings,
-    ) -> ModelOutput:
+    ) -> ProviderResult:
         request = self._common_request(
             agent, context, settings, max_output_tokens=settings.max_output_tokens
         )
@@ -198,7 +229,9 @@ class AzureFoundryProvider:
             },
         )
         try:
-            return ModelOutput.model_validate_json(_response_text(response))
+            output = ModelOutput.model_validate_json(_response_text(response))
+            usage = _model_call_usage(response, "combined")
+            return ProviderResult(output=output, usage=() if usage is None else (usage,))
         except ValidationError as exc:
             raise AzureFoundryResponseError(
                 f"Foundry returned an invalid dual output for agent {agent.id!r}"
@@ -211,7 +244,7 @@ class AzureFoundryProvider:
         agent: AgentConfig,
         context: AgentTurnContext,
         settings: FoundrySettings,
-    ) -> ModelOutput:
+    ) -> ProviderResult:
         rendered_context = _render_context(context)
         private_request = self._common_request(
             agent, context, settings, max_output_tokens=settings.private_max_output_tokens
@@ -240,7 +273,12 @@ class AzureFoundryProvider:
             ),
             input=f"{rendered_context}\n\nYour private reflection for this turn:\n{soliloquy}",
         )
-        return ModelOutput(post=_response_text(public_response), soliloquy=soliloquy)
+        private_usage = _model_call_usage(private_response, "private")
+        public_usage = _model_call_usage(public_response, "public")
+        return ProviderResult(
+            output=ModelOutput(post=_response_text(public_response), soliloquy=soliloquy),
+            usage=tuple(item for item in (private_usage, public_usage) if item is not None),
+        )
 
     def generate(
         self,
@@ -248,7 +286,7 @@ class AzureFoundryProvider:
         agent: AgentConfig,
         context: AgentTurnContext,
         seed: int,
-    ) -> ModelOutput:
+    ) -> ProviderResult:
         del seed  # Foundry does not expose a portable seed across all catalog models.
         settings = self._settings(agent)
         client = self._client(agent, settings)

@@ -10,8 +10,10 @@ from thoughtstage.engine import ExperimentEngine, UnknownProviderError
 from thoughtstage.models import (
     AgentConfig,
     AgentTurnContext,
+    ModelCallUsage,
     ModelOutput,
     PrivateMemory,
+    ProviderResult,
     Schedule,
     TurnOrder,
 )
@@ -21,11 +23,38 @@ class RecordingProvider:
     def __init__(self) -> None:
         self.calls: list[tuple[AgentConfig, AgentTurnContext]] = []
 
-    def generate(self, *, agent: AgentConfig, context: AgentTurnContext, seed: int) -> ModelOutput:
+    def generate(
+        self, *, agent: AgentConfig, context: AgentTurnContext, seed: int
+    ) -> ProviderResult:
         self.calls.append((agent, context))
-        return ModelOutput(
-            post=f"public-{agent.id}-r{context.round_number}",
-            soliloquy=f"private-{agent.id}-r{context.round_number}",
+        return ProviderResult(
+            output=ModelOutput(
+                post=f"public-{agent.id}-r{context.round_number}",
+                soliloquy=f"private-{agent.id}-r{context.round_number}",
+            )
+        )
+
+
+class UsageProvider:
+    def generate(
+        self, *, agent: AgentConfig, context: AgentTurnContext, seed: int
+    ) -> ProviderResult:
+        return ProviderResult(
+            output=ModelOutput(
+                post=f"public-{agent.id}-r{context.round_number}",
+                soliloquy=f"private-{agent.id}-r{context.round_number}",
+            ),
+            usage=(
+                ModelCallUsage(
+                    phase="combined",
+                    input_tokens=100,
+                    cached_input_tokens=25,
+                    output_tokens=20,
+                    reasoning_tokens=5,
+                    total_tokens=120,
+                    response_id=f"response-{agent.id}-{context.round_number}",
+                ),
+            ),
         )
 
 
@@ -69,6 +98,28 @@ def test_private_and_public_streams_are_separate(
     assert "this-secret-must-not-be-written" not in manifest_text
     assert "TEST_PROVIDER_KEY" in manifest_text
     assert json.loads(manifest_text)["status"] == "completed"
+
+
+def test_provider_usage_is_persisted_only_in_the_researcher_channel(
+    loaded_experiment: LoadedExperiment, tmp_path: Path
+) -> None:
+    result = ExperimentEngine({"mock": UsageProvider()}).run(
+        loaded_experiment, output_root=tmp_path / "runs", run_id="usage-ledger"
+    )
+    bundle = Path(result.bundle_path)
+    usage_path = bundle / "private" / "model_usage.jsonl"
+    usage_records = [json.loads(line) for line in usage_path.read_text().splitlines()]
+
+    assert len(result.model_usage) == 4
+    assert len(usage_records) == 4
+    assert {item["phase"] for item in usage_records} == {"combined"}
+    assert all(item["post_event_id"].startswith("post-") for item in usage_records)
+    assert "input_tokens" not in (bundle / "public.jsonl").read_text(encoding="utf-8")
+    assert "input_tokens" not in (bundle / "private" / "soliloquies.jsonl").read_text(
+        encoding="utf-8"
+    )
+    manifest = json.loads((bundle / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["counts"]["model_calls"] == 4
 
 
 def test_mock_provider_is_deterministic(

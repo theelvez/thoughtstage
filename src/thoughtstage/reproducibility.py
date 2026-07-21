@@ -16,7 +16,7 @@ from pydantic import ValidationError
 from thoughtstage import __version__
 from thoughtstage.config import LoadedExperiment
 from thoughtstage.files import ExperimentFileReader
-from thoughtstage.models import PublicPost, Soliloquy
+from thoughtstage.models import ModelUsageEvent, PublicPost, Soliloquy
 
 
 class RunBundleResumeError(ValueError):
@@ -46,6 +46,41 @@ def collect_files(root: Path | None) -> list[dict[str, Any]]:
         return []
     reader = ExperimentFileReader(root)
     return [reader.file_info(item["path"]) for item in reader.list_files("*")]
+
+
+def _read_jsonl_records(
+    path: Path, *, repair_trailing_partial: bool = False
+) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    payload = path.read_bytes()
+    raw_lines = payload.splitlines(keepends=True)
+    values: list[dict[str, Any]] = []
+    for index, raw_line in enumerate(raw_lines):
+        is_final = index == len(raw_lines) - 1
+        terminated = raw_line.endswith((b"\n", b"\r"))
+        content = raw_line.strip()
+        if not content:
+            if repair_trailing_partial and is_final and not terminated:
+                with path.open("r+b") as stream:
+                    stream.truncate(len(payload) - len(raw_line))
+            continue
+        try:
+            line = content.decode("utf-8")
+            value = json.loads(line)
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            if repair_trailing_partial and is_final and not terminated:
+                with path.open("r+b") as stream:
+                    stream.truncate(len(payload) - len(raw_line))
+                return values
+            raise RunBundleResumeError("run event stream contains invalid JSON") from exc
+        if not isinstance(value, dict):
+            raise RunBundleResumeError("run event is not an object")
+        values.append(value)
+        if repair_trailing_partial and is_final and not terminated:
+            with path.open("ab") as stream:
+                stream.write(b"\n")
+    return values
 
 
 class RunBundleWriter:
@@ -105,7 +140,7 @@ class RunBundleWriter:
                 "platform": platform.platform(),
             },
             "inputs": {"files": self.files},
-            "counts": {"public_posts": 0, "soliloquies": 0},
+            "counts": {"public_posts": 0, "soliloquies": 0, "model_calls": 0},
         }
         self._write_manifest()
 
@@ -140,6 +175,7 @@ class RunBundleWriter:
         self.files = files
         self.manifest = manifest
         posts, soliloquies = self.existing_events(repair_trailing_partial=True)
+        model_usage = self.existing_model_usage(repair_trailing_partial=True)
         if len(posts) != len(soliloquies):
             raise RunBundleResumeError("public and private event counts do not match")
 
@@ -159,6 +195,7 @@ class RunBundleWriter:
         self.manifest["counts"] = {
             "public_posts": len(posts),
             "soliloquies": len(soliloquies),
+            "model_calls": len(model_usage),
         }
         self._write_manifest()
         return self
@@ -170,49 +207,42 @@ class RunBundleWriter:
     ) -> tuple[list[PublicPost], list[Soliloquy]]:
         """Load the typed, append-only event prefix from this bundle."""
 
-        def records(path: Path) -> list[dict[str, Any]]:
-            if not path.exists():
-                return []
-            payload = path.read_bytes()
-            raw_lines = payload.splitlines(keepends=True)
-            values: list[dict[str, Any]] = []
-            for index, raw_line in enumerate(raw_lines):
-                is_final = index == len(raw_lines) - 1
-                terminated = raw_line.endswith((b"\n", b"\r"))
-                content = raw_line.strip()
-                if not content:
-                    if repair_trailing_partial and is_final and not terminated:
-                        with path.open("r+b") as stream:
-                            stream.truncate(len(payload) - len(raw_line))
-                    continue
-                try:
-                    line = content.decode("utf-8")
-                    value = json.loads(line)
-                except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-                    if repair_trailing_partial and is_final and not terminated:
-                        with path.open("r+b") as stream:
-                            stream.truncate(len(payload) - len(raw_line))
-                        return values
-                    raise RunBundleResumeError("run event stream contains invalid JSON") from exc
-                if not isinstance(value, dict):
-                    raise RunBundleResumeError("run event is not an object")
-                values.append(value)
-                if repair_trailing_partial and is_final and not terminated:
-                    with path.open("ab") as stream:
-                        stream.write(b"\n")
-            return values
-
         try:
             posts = [
-                PublicPost.model_validate(value) for value in records(self.path / "public.jsonl")
+                PublicPost.model_validate(value)
+                for value in _read_jsonl_records(
+                    self.path / "public.jsonl",
+                    repair_trailing_partial=repair_trailing_partial,
+                )
             ]
             soliloquies = [
                 Soliloquy.model_validate(value)
-                for value in records(self.path / "private" / "soliloquies.jsonl")
+                for value in _read_jsonl_records(
+                    self.path / "private" / "soliloquies.jsonl",
+                    repair_trailing_partial=repair_trailing_partial,
+                )
             ]
         except ValidationError as exc:
             raise RunBundleResumeError("run event stream violates its schema") from exc
         return posts, soliloquies
+
+    def existing_model_usage(
+        self,
+        *,
+        repair_trailing_partial: bool = False,
+    ) -> list[ModelUsageEvent]:
+        """Load researcher-private provider usage records from this bundle."""
+
+        try:
+            return [
+                ModelUsageEvent.model_validate(value)
+                for value in _read_jsonl_records(
+                    self.path / "private" / "model_usage.jsonl",
+                    repair_trailing_partial=repair_trailing_partial,
+                )
+            ]
+        except ValidationError as exc:
+            raise RunBundleResumeError("model usage stream violates its schema") from exc
 
     @staticmethod
     def _write_json(path: Path, value: Any) -> None:
@@ -238,11 +268,18 @@ class RunBundleWriter:
             soliloquy.model_dump(mode="json"),
         )
 
-    def finish(self, *, public_posts: int, soliloquies: int) -> None:
+    def write_model_usage(self, usage: ModelUsageEvent) -> None:
+        self._append_jsonl(
+            self.path / "private" / "model_usage.jsonl",
+            usage.model_dump(mode="json"),
+        )
+
+    def finish(self, *, public_posts: int, soliloquies: int, model_calls: int) -> None:
         self.manifest["status"] = "completed"
         self.manifest["completed_at"] = datetime.now(UTC).isoformat()
         self.manifest["counts"] = {
             "public_posts": public_posts,
             "soliloquies": soliloquies,
+            "model_calls": model_calls,
         }
         self._write_manifest()
