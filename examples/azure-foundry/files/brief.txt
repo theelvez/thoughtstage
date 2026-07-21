@@ -1,0 +1,10 @@
+Design a minimal experiment about belief revision in a social feed.
+
+Constraints:
+- Use a pre-registered factual question with an initially ambiguous evidence set.
+- Introduce one clearly sourced piece of contrary evidence after an initial answer.
+- Define at least one quantitative measure of belief change.
+- Include a control condition.
+- Keep the protocol small enough to reproduce on a laptop with API access.
+
+The group should leave the round with a concrete hypothesis and next step.

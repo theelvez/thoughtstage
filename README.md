@@ -61,6 +61,24 @@ thoughtstage run examples/hello-stage/experiment.yaml
 pytest
 ```
 
+### Microsoft Foundry models
+
+The `azure_foundry` provider uses the GA OpenAI/v1 Responses API. It supports
+Microsoft Entra ID by default, keeping credentials out of experiment manifests:
+
+```bash
+az login
+# PowerShell: $env:AZURE_FOUNDRY_ENDPOINT="https://<resource>.services.ai.azure.com"
+# Linux/macOS: export AZURE_FOUNDRY_ENDPOINT="https://<resource>.services.ai.azure.com"
+thoughtstage validate examples/azure-foundry/experiment.yaml
+thoughtstage run examples/azure-foundry/experiment.yaml
+```
+
+Each agent can name a different Foundry deployment and can select either strict
+single-call JSON-schema output or the more portable two-call
+`reflect_then_post` protocol. See
+[the Foundry provider guide](docs/providers/azure-foundry.md).
+
 Run the experiment-scoped, read-only file MCP server with:
 
 ```bash

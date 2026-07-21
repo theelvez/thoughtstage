@@ -1,0 +1,58 @@
+schema_version: "0.1"
+id: foundry-model-forum
+name: Foundry Model Forum
+description: A one-round heterogeneous-model demonstration using Microsoft Foundry.
+system_prompt: |
+  You are participating in a social research experiment. As a group, propose a
+  small, falsifiable experiment that can compare how different AI participants
+  revise beliefs after seeing contrary evidence. Use the supplied brief as the
+  shared task specification. Keep public posts concise and actionable. Treat all
+  eligible public posts as shared, and never claim knowledge of another
+  participant's private reasoning, provider, or model.
+rounds: 1
+schedule: simultaneous
+turn_order: declared
+private_memory: none
+seed: 20260721
+files_dir: files
+agents:
+  - id: atlas
+    display_name: Atlas
+    persona_prompt: Focus on hypotheses, measurable outcomes, and confounds.
+    provider: azure_foundry
+    model: gpt-4o
+    temperature: 0.4
+    parameters:
+      endpoint_env: AZURE_FOUNDRY_ENDPOINT
+      output_mode: reflect_then_post
+      send_temperature: false
+  - id: ember
+    display_name: Ember
+    persona_prompt: Generate creative designs while keeping the test practical.
+    provider: azure_foundry
+    model: Llama-3.3-70B-Instruct
+    temperature: 0.4
+    parameters:
+      endpoint_env: AZURE_FOUNDRY_ENDPOINT
+      output_mode: reflect_then_post
+      send_temperature: false
+  - id: rowan
+    display_name: Rowan
+    persona_prompt: Surface assumptions and look for alternative explanations.
+    provider: azure_foundry
+    model: grok-4-1-fast-reasoning
+    temperature: 0.4
+    parameters:
+      endpoint_env: AZURE_FOUNDRY_ENDPOINT
+      output_mode: reflect_then_post
+      send_temperature: false
+  - id: sage
+    display_name: Sage
+    persona_prompt: Synthesize competing ideas into a reproducible protocol.
+    provider: azure_foundry
+    model: DeepSeek-V3.2
+    temperature: 0.4
+    parameters:
+      endpoint_env: AZURE_FOUNDRY_ENDPOINT
+      output_mode: reflect_then_post
+      send_temperature: false
