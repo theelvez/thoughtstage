@@ -339,6 +339,47 @@ def test_converse_executes_bounded_file_tool_and_returns_private_audit(
     assert "technical evidence" in tool_result["content"][0]["text"]
 
 
+def test_malformed_tool_name_falls_back_without_replaying_invalid_message(
+    context: AgentTurnContext,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ATLAS_AWS_PROFILE", "thoughtstage-bedrock")
+    malformed = bedrock_response("ignored", request_id="malformed")
+    malformed["stopReason"] = "tool_use"
+    malformed["output"]["message"]["content"] = [
+        {
+            "toolUse": {
+                "toolUseId": "bad-name-1",
+                "name": "read_text*",
+                "input": {"path": "brief.txt"},
+            }
+        }
+    ]
+    client = FakeBedrockClient(
+        [
+            malformed,
+            bedrock_response("Recovered reflection.", request_id="fallback"),
+            bedrock_response("Public post.", request_id="public"),
+        ]
+    )
+
+    result = BedrockProvider(client_factory=RecordingClientFactory(client)).generate(
+        agent=bedrock_agent(),
+        context=context,
+        seed=0,
+        file_tools=ExperimentFileTools(ExperimentFileReader(tmp_path)),
+    )
+
+    assert result.output.soliloquy == "Recovered reflection."
+    assert result.file_tool_calls == ()
+    assert [item.phase for item in result.usage] == ["private", "private", "public"]
+    fallback = client.calls[1]
+    assert "toolConfig" not in fallback
+    assert "read_text*" not in str(fallback)
+    assert "malformed metadata" in fallback["system"][-1]["text"]
+
+
 def test_file_tool_round_limit_falls_back_to_tool_free_completion(
     context: AgentTurnContext,
     tmp_path: Path,

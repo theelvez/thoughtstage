@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Callable
 from typing import Any, Literal, Protocol
 
@@ -22,6 +23,7 @@ from thoughtstage.models import (
 )
 
 DEFAULT_REGION = "us-east-2"
+_BEDROCK_TOOL_NAME = re.compile(r"^[a-zA-Z0-9_-]+$")
 
 
 class BedrockError(RuntimeError):
@@ -254,6 +256,43 @@ class BedrockProvider:
         except (KeyError, IndexError, TypeError) as exc:  # pragma: no cover - internal contract
             raise BedrockResponseError("Bedrock request has no initial text input") from exc
 
+        def complete_without_tools(
+            reason: str,
+        ) -> tuple[str, tuple[ModelCallUsage, ...], tuple[FileToolCall, ...]]:
+            evidence = "\n\n".join(evidence_by_hash.values())[:200_000]
+            fallback_request = {
+                key: value
+                for key, value in request.items()
+                if key not in {"messages", "toolConfig"}
+            }
+            fallback_request["system"] = [
+                *request["system"],
+                {
+                    "text": (
+                        f"{reason} Do not request additional tools. Complete the requested "
+                        "output now using only the validated evidence already gathered."
+                    )
+                },
+            ]
+            fallback_request["messages"] = [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "text": (
+                                f"{initial_input}\n\nValidated evidence gathered from "
+                                f"experiment files:\n{evidence or '- None.'}"
+                            )
+                        }
+                    ],
+                }
+            ]
+            fallback_response = client.converse(**fallback_request)
+            fallback_usage = _model_call_usage(fallback_response, phase)
+            if fallback_usage is not None:
+                usage.append(fallback_usage)
+            return _response_text(fallback_response), tuple(usage), tuple(calls)
+
         while True:
             response = client.converse(**request)
             call_usage = _model_call_usage(response, phase)
@@ -272,49 +311,27 @@ class BedrockProvider:
 
             tool_rounds += 1
             if tool_rounds > max_tool_rounds:
-                evidence = "\n\n".join(evidence_by_hash.values())[:200_000]
-                fallback_request = {
-                    key: value
-                    for key, value in request.items()
-                    if key not in {"messages", "toolConfig"}
-                }
-                fallback_request["system"] = [
-                    *request["system"],
-                    {
-                        "text": (
-                            "The experiment file-tool budget is exhausted. Do not request "
-                            "additional tools. Complete the requested output now using the "
-                            "evidence already gathered below."
-                        )
-                    },
-                ]
-                fallback_request["messages"] = [
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "text": (
-                                    f"{initial_input}\n\nEvidence gathered from experiment "
-                                    f"files:\n{evidence}"
-                                )
-                            }
-                        ],
-                    }
-                ]
-                fallback_response = client.converse(**fallback_request)
-                fallback_usage = _model_call_usage(fallback_response, phase)
-                if fallback_usage is not None:
-                    usage.append(fallback_usage)
-                return _response_text(fallback_response), tuple(usage), tuple(calls)
-            request["messages"].append(message)
-            tool_results: list[dict[str, Any]] = []
+                return complete_without_tools("The experiment file-tool budget is exhausted.")
+
+            validated_tool_blocks: list[tuple[dict[str, Any], str, str]] = []
             for tool_use in tool_blocks:
                 tool_use_id = tool_use.get("toolUseId")
                 name = tool_use.get("name")
-                if not isinstance(tool_use_id, str) or not tool_use_id or len(tool_use_id) > 256:
-                    raise BedrockResponseError("Bedrock returned an invalid tool use id")
-                if not isinstance(name, str) or not name:
-                    raise BedrockResponseError("Bedrock returned an invalid tool name")
+                if (
+                    not isinstance(tool_use_id, str)
+                    or not tool_use_id
+                    or len(tool_use_id) > 256
+                    or not isinstance(name, str)
+                    or _BEDROCK_TOOL_NAME.fullmatch(name) is None
+                ):
+                    return complete_without_tools(
+                        "A requested experiment file tool had malformed metadata."
+                    )
+                validated_tool_blocks.append((tool_use, tool_use_id, name))
+
+            request["messages"].append(message)
+            tool_results: list[dict[str, Any]] = []
+            for tool_use, tool_use_id, name in validated_tool_blocks:
                 result_text, call = file_tools.execute(
                     name=name,
                     tool_use_id=tool_use_id,
