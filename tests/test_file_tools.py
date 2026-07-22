@@ -66,3 +66,19 @@ def test_unknown_tool_and_invalid_input_do_not_escape_validation(tmp_path: Path)
     assert json.loads(invalid_result)["error"]["code"] == "invalid_input"
     assert invalid_audit.operation == "read_text"
     assert invalid_audit.path is None
+
+    wildcard_result, wildcard_audit = _tools(tmp_path).execute(
+        name="search_text",
+        tool_use_id="tool-wildcard",
+        phase="private",
+        raw_input={"query": "evidence", "path": "*"},
+    )
+    assert json.loads(wildcard_result) == {
+        "error": {
+            "code": "file_access_error",
+            "message": "path does not exist inside the experiment root",
+        }
+    }
+    assert wildcard_audit.success is False
+    assert wildcard_audit.error_code == "file_access_error"
+    assert wildcard_audit.path is None
