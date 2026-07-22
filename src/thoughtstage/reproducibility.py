@@ -16,7 +16,13 @@ from pydantic import ValidationError
 from thoughtstage import __version__
 from thoughtstage.config import LoadedExperiment
 from thoughtstage.files import ExperimentFileReader
-from thoughtstage.models import FileToolEvent, ModelUsageEvent, PublicPost, Soliloquy
+from thoughtstage.models import (
+    FileToolEvent,
+    ModelUsageEvent,
+    PublicPost,
+    PublicStimulus,
+    Soliloquy,
+)
 
 
 class RunBundleResumeError(ValueError):
@@ -97,6 +103,7 @@ class RunBundleWriter:
         self.path = Path(output_root).resolve() / self.run_id
         self.path.mkdir(parents=True, exist_ok=False)
         (self.path / "private").mkdir()
+        (self.path / "public").mkdir()
         (self.path / "experiment.yaml").write_bytes(loaded.source_bytes)
 
         private_briefings = {
@@ -133,6 +140,7 @@ class RunBundleWriter:
                 "turn_order": loaded.config.turn_order.value,
                 "private_memory": loaded.config.private_memory.value,
                 "seed": loaded.config.seed,
+                "scheduled_stimuli": len(loaded.config.stimuli),
             },
             "agents": [
                 {
@@ -153,9 +161,19 @@ class RunBundleWriter:
             "inputs": {
                 "files": self.files,
                 "private_briefings": private_briefing_inputs,
+                "scheduled_stimuli": [
+                    {
+                        "id": stimulus.id,
+                        "round": stimulus.round,
+                        "source_id": stimulus.source_id,
+                        "sha256": sha256_bytes(stimulus.content.encode("utf-8")),
+                    }
+                    for stimulus in loaded.config.stimuli
+                ],
             },
             "counts": {
                 "public_posts": 0,
+                "public_stimuli": 0,
                 "soliloquies": 0,
                 "model_calls": 0,
                 "file_tool_calls": 0,
@@ -194,6 +212,7 @@ class RunBundleWriter:
         self.files = files
         self.manifest = manifest
         posts, soliloquies = self.existing_events(repair_trailing_partial=True)
+        stimuli = self.existing_stimuli(repair_trailing_partial=True)
         model_usage = self.existing_model_usage(repair_trailing_partial=True)
         file_tool_events = self.existing_file_tool_events(repair_trailing_partial=True)
         if len(posts) != len(soliloquies):
@@ -214,6 +233,7 @@ class RunBundleWriter:
         self.manifest["completed_at"] = None
         self.manifest["counts"] = {
             "public_posts": len(posts),
+            "public_stimuli": len(stimuli),
             "soliloquies": len(soliloquies),
             "model_calls": len(model_usage),
             "file_tool_calls": len(file_tool_events),
@@ -246,6 +266,24 @@ class RunBundleWriter:
         except ValidationError as exc:
             raise RunBundleResumeError("run event stream violates its schema") from exc
         return posts, soliloquies
+
+    def existing_stimuli(
+        self,
+        *,
+        repair_trailing_partial: bool = False,
+    ) -> list[PublicStimulus]:
+        """Load the typed, append-only public stimulus stream."""
+
+        try:
+            return [
+                PublicStimulus.model_validate(value)
+                for value in _read_jsonl_records(
+                    self.path / "public" / "stimuli.jsonl",
+                    repair_trailing_partial=repair_trailing_partial,
+                )
+            ]
+        except ValidationError as exc:
+            raise RunBundleResumeError("public stimulus stream violates its schema") from exc
 
     def existing_model_usage(
         self,
@@ -301,6 +339,12 @@ class RunBundleWriter:
     def write_post(self, post: PublicPost) -> None:
         self._append_jsonl(self.path / "public.jsonl", post.model_dump(mode="json"))
 
+    def write_stimulus(self, stimulus: PublicStimulus) -> None:
+        self._append_jsonl(
+            self.path / "public" / "stimuli.jsonl",
+            stimulus.model_dump(mode="json"),
+        )
+
     def write_soliloquy(self, soliloquy: Soliloquy) -> None:
         self._append_jsonl(
             self.path / "private" / "soliloquies.jsonl",
@@ -323,6 +367,7 @@ class RunBundleWriter:
         self,
         *,
         public_posts: int,
+        public_stimuli: int,
         soliloquies: int,
         model_calls: int,
         file_tool_calls: int,
@@ -331,6 +376,7 @@ class RunBundleWriter:
         self.manifest["completed_at"] = datetime.now(UTC).isoformat()
         self.manifest["counts"] = {
             "public_posts": public_posts,
+            "public_stimuli": public_stimuli,
             "soliloquies": soliloquies,
             "model_calls": model_calls,
             "file_tool_calls": file_tool_calls,

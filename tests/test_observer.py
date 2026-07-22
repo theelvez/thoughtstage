@@ -103,6 +103,7 @@ def test_list_run_bundles_uses_live_stream_counts(tmp_path: Path) -> None:
     assert runs[0]["status"] == "running"
     assert runs[0]["counts"] == {
         "public_posts": 1,
+        "public_stimuli": 0,
         "soliloquies": 1,
         "model_calls": 1,
         "file_tool_calls": 0,
@@ -152,3 +153,31 @@ def test_observer_api_returns_not_found(tmp_path: Path, monkeypatch: pytest.Monk
     response = client.get("/api/runs/missing")
 
     assert response.status_code == 404
+
+
+def test_observer_merges_public_stimuli_with_posts_by_sequence(tmp_path: Path) -> None:
+    bundle = _make_live_bundle(tmp_path)
+    (bundle / "public").mkdir()
+    stimulus = {
+        "event_type": "stimulus",
+        "event_id": "stimulus-r0002-developer-followup-000002",
+        "sequence": 2,
+        "experiment_id": "observer-test",
+        "round_number": 2,
+        "stimulus_id": "developer-followup",
+        "source_id": "developer",
+        "display_name": "Developer Alex",
+        "content": "Please state your final approval decision.",
+    }
+    (bundle / "public" / "stimuli.jsonl").write_text(json.dumps(stimulus) + "\n", encoding="utf-8")
+
+    run = read_run_bundle("live-run", root=tmp_path)
+
+    assert [event["event_id"] for event in run["posts"]] == [
+        "post-r0001-atlas-000001",
+        "stimulus-r0002-developer-followup-000002",
+    ]
+    assert run["stimuli"] == [stimulus]
+    assert run["counts"]["public_posts"] == 1
+    assert run["counts"]["public_stimuli"] == 1
+    assert len(run["soliloquies"]) == 1

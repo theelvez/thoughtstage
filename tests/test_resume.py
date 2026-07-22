@@ -16,6 +16,7 @@ from thoughtstage.models import (
     ModelCallUsage,
     ModelOutput,
     ProviderResult,
+    ScheduledStimulus,
 )
 from thoughtstage.reproducibility import RunBundleResumeError
 
@@ -193,4 +194,48 @@ def test_resume_rejects_terminated_invalid_json(experiment_file: Path, tmp_path:
         stream.write("{invalid-json}\n")
 
     with pytest.raises(RunBundleResumeError, match="invalid JSON"):
+        ExperimentEngine({"mock": ResumeProvider()}).run(loaded, resume_path=bundle)
+
+
+def _with_round_one_stimulus(loaded: LoadedExperiment) -> LoadedExperiment:
+    stimulus = ScheduledStimulus(
+        id="developer-opening",
+        round=1,
+        source_id="developer",
+        display_name="Developer Alex",
+        content="Please review the code and state whether it is safe to approve.",
+    )
+    config = loaded.config.model_copy(update={"stimuli": (stimulus,)})
+    return LoadedExperiment(
+        config=config,
+        source_path=loaded.source_path,
+        source_bytes=json.dumps(config.model_dump(mode="json")).encode(),
+        files_root=loaded.files_root,
+    )
+
+
+def test_resume_replays_scheduled_stimulus_without_regenerating_it(
+    experiment_file: Path, tmp_path: Path
+) -> None:
+    loaded = _with_round_one_stimulus(_sequential_experiment(experiment_file))
+    bundle = _interrupted_bundle(loaded, tmp_path / "runs")
+    provider = ResumeProvider()
+
+    result = ExperimentEngine({"mock": provider}).run(loaded, resume_path=bundle)
+
+    assert [stimulus.sequence for stimulus in result.public_stimuli] == [1]
+    assert [post.sequence for post in result.public_posts] == [2, 3]
+    assert [len(context.public_feed) for _agent, context in provider.calls] == [2]
+    assert len((bundle / "public" / "stimuli.jsonl").read_text(encoding="utf-8").splitlines()) == 1
+
+
+def test_resume_rejects_tampered_public_stimulus(experiment_file: Path, tmp_path: Path) -> None:
+    loaded = _with_round_one_stimulus(_sequential_experiment(experiment_file))
+    bundle = _interrupted_bundle(loaded, tmp_path / "runs")
+    stimulus_path = bundle / "public" / "stimuli.jsonl"
+    event = json.loads(stimulus_path.read_text(encoding="utf-8"))
+    event["content"] = "The recorded condition was changed after the interruption."
+    stimulus_path.write_text(json.dumps(event) + "\n", encoding="utf-8")
+
+    with pytest.raises(RunBundleResumeError, match="public stimulus prefix"):
         ExperimentEngine({"mock": ResumeProvider()}).run(loaded, resume_path=bundle)

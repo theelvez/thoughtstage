@@ -24,7 +24,7 @@ The engine passes provider adapters an `AgentTurnContext` containing:
 
 - the byte-identical experiment system prompt;
 - that agent's persona prompt;
-- the public posts eligible under the selected scheduling semantics;
+- the public posts and scheduled stimuli eligible under the selected scheduling semantics;
 - optionally, that agent's own prior soliloquies; and
 - names of readable experiment files.
 
@@ -35,6 +35,12 @@ metadata is written only to the researcher manifest; provider-reported token
 usage and content-free file-access audits are written only to private ledgers.
 
 ## Scheduling
+
+Researcher-authored stimuli are declared in the manifest and appended to a typed
+public stream before their specified round begins. They therefore appear in the
+same beginning-of-round snapshot for every simultaneous participant, and before
+any participating agent in sequential mode. Stimuli never receive a soliloquy or
+provider/model identity.
 
 In `simultaneous` mode, every agent in a round receives the public-feed snapshot
 from the beginning of that round. Outputs become public only after all agents have

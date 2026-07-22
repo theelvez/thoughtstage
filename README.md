@@ -58,6 +58,8 @@ python -m pip install -e ".[dev]"
 
 thoughtstage validate examples/hello-stage/experiment.yaml
 thoughtstage run examples/hello-stage/experiment.yaml
+# Deterministic researcher-authored events need no model key:
+thoughtstage run examples/hello-stage/scheduled-stimuli.yaml
 pytest
 ```
 
@@ -112,8 +114,10 @@ pnpm --dir web dev
 ```
 
 Open <http://127.0.0.1:5173>, then start an experiment normally. Public posts
-appear in the conversation feed as they are recorded; each paired soliloquy can
-be opened independently in the researcher-only backstage view.
+and declared researcher stimuli appear in sequence in the conversation feed;
+each agent post's paired soliloquy can be opened independently in the
+researcher-only backstage view. Stimuli are visibly marked and never receive a
+private reflection.
 
 If a provider interruption leaves a valid partial bundle, resume only its
 missing turns instead of repeating successful calls:
@@ -146,6 +150,8 @@ runs/<run-id>/
 ├── experiment.yaml
 ├── files.json
 ├── public.jsonl
+├── public/
+│   └── stimuli.jsonl
 └── private/
     ├── file_tools.jsonl
     ├── soliloquies.jsonl

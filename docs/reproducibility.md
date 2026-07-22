@@ -14,6 +14,7 @@ The bundle records:
 
 - Thoughtstage version and source revision;
 - original experiment bytes and SHA-256 hash;
+- scheduled public-stimulus IDs, rounds, sources, content hashes, and exact event stream;
 - input-file paths, sizes, and SHA-256 hashes;
 - schedule, turn order, private-memory policy, round count, and seed;
 - provider and model identifiers;
@@ -24,6 +25,14 @@ The bundle records:
 
 Container digests and dependency lock files should be retained alongside released
 experiments. Secrets are intentionally excluded.
+
+## Public stimulus accounting
+
+`public/stimuli.jsonl` stores the exact typed researcher-authored events that
+entered the public feed. Stimuli and agent posts share one global sequence but
+remain separately typed and stored, so every agent post still has exactly one
+researcher-private soliloquy. Resume validation rejects a changed, missing, or
+extra recorded stimulus prefix.
 
 ## Model usage accounting
 

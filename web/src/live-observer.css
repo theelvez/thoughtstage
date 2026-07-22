@@ -350,6 +350,15 @@
   animation: card-arrive 400ms ease-out;
 }
 
+.feed-card.stimulus {
+  background: #eee8d8;
+  border-style: dashed;
+}
+
+.feed-card.stimulus .agent-avatar {
+  border-radius: 0;
+}
+
 .feed-card-rail {
   background: var(--agent);
 }
@@ -412,6 +421,15 @@
   line-height: 1.62;
   letter-spacing: -0.015em;
   white-space: pre-wrap;
+}
+
+.stimulus-note {
+  padding: 12px 0 0;
+  border-top: 1px solid rgba(24, 24, 21, 0.12);
+  color: #6f5314;
+  font: 500 10px/1.35 "DM Mono", monospace;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .soliloquy-toggle {

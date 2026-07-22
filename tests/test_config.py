@@ -72,3 +72,98 @@ def test_rejects_files_directory_escape(experiment_file: Path) -> None:
 
     with pytest.raises(ExperimentLoadError, match="inside the experiment directory"):
         load_experiment(experiment_file)
+
+
+def test_loads_ordered_scheduled_public_stimuli(experiment_file: Path) -> None:
+    content = experiment_file.read_text(encoding="utf-8")
+    experiment_file.write_text(
+        content.replace(
+            "agents:\n",
+            "stimuli:\n"
+            "  - id: developer-opening\n"
+            "    round: 1\n"
+            "    source_id: developer\n"
+            "    display_name: Developer Alex\n"
+            "    content: Please review the submitted code.\n"
+            "  - id: developer-followup\n"
+            "    round: 2\n"
+            "    source_id: developer\n"
+            "    display_name: Developer Alex\n"
+            "    content: Please state your final decision.\n"
+            "agents:\n",
+        ),
+        encoding="utf-8",
+    )
+
+    loaded = load_experiment(experiment_file)
+
+    assert [stimulus.id for stimulus in loaded.config.stimuli] == [
+        "developer-opening",
+        "developer-followup",
+    ]
+    assert [stimulus.round for stimulus in loaded.config.stimuli] == [1, 2]
+
+
+def test_rejects_duplicate_stimulus_ids(experiment_file: Path) -> None:
+    content = experiment_file.read_text(encoding="utf-8")
+    experiment_file.write_text(
+        content.replace(
+            "agents:\n",
+            "stimuli:\n"
+            "  - id: repeated-stimulus\n"
+            "    round: 1\n"
+            "    source_id: developer\n"
+            "    display_name: Developer\n"
+            "    content: First message.\n"
+            "  - id: repeated-stimulus\n"
+            "    round: 2\n"
+            "    source_id: developer\n"
+            "    display_name: Developer\n"
+            "    content: Second message.\n"
+            "agents:\n",
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ExperimentLoadError, match="stimulus ids must be unique"):
+        load_experiment(experiment_file)
+
+
+def test_rejects_stimulus_after_final_round(experiment_file: Path) -> None:
+    content = experiment_file.read_text(encoding="utf-8")
+    experiment_file.write_text(
+        content.replace(
+            "agents:\n",
+            "stimuli:\n"
+            "  - id: too-late\n"
+            "    round: 3\n"
+            "    source_id: developer\n"
+            "    display_name: Developer\n"
+            "    content: This round does not exist.\n"
+            "agents:\n",
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ExperimentLoadError, match="must not exceed experiment rounds"):
+        load_experiment(experiment_file)
+
+
+def test_rejects_stimulus_source_that_impersonates_an_agent(experiment_file: Path) -> None:
+    content = experiment_file.read_text(encoding="utf-8")
+    experiment_file.write_text(
+        content.replace(
+            "agents:\n",
+            "stimuli:\n"
+            "  - id: impersonation\n"
+            "    round: 1\n"
+            "    source_id: alpha\n"
+            "    display_name: Alpha\n"
+            "    content: This must not be attributed to the participant.\n"
+            "agents:\n",
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ExperimentLoadError, match="must not match participating agent ids"):
+        load_experiment(experiment_file)

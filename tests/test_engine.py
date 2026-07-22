@@ -17,6 +17,7 @@ from thoughtstage.models import (
     PrivateMemory,
     ProviderResult,
     Schedule,
+    ScheduledStimulus,
     TurnOrder,
 )
 
@@ -326,3 +327,63 @@ def test_unknown_provider_fails_explicitly(
 
     with pytest.raises(UnknownProviderError, match="missing"):
         ExperimentEngine().run(loaded, output_root=tmp_path / "runs", run_id="missing")
+
+
+def test_scheduled_stimuli_are_public_typed_and_visible_before_each_round(
+    loaded_experiment: LoadedExperiment, tmp_path: Path
+) -> None:
+    stimuli = (
+        ScheduledStimulus(
+            id="developer-opening",
+            round=1,
+            source_id="developer",
+            display_name="Developer Alex",
+            content="Please review the submitted code and identify any blocking issue.",
+        ),
+        ScheduledStimulus(
+            id="developer-decision",
+            round=2,
+            source_id="developer",
+            display_name="Developer Alex",
+            content="Please state your final approval decision and cite the code.",
+        ),
+    )
+    config = loaded_experiment.config.model_copy(update={"stimuli": stimuli})
+    loaded = LoadedExperiment(
+        config=config,
+        source_path=loaded_experiment.source_path,
+        source_bytes=json.dumps(config.model_dump(mode="json")).encode(),
+        files_root=loaded_experiment.files_root,
+    )
+    recorder = RecordingProvider()
+
+    result = ExperimentEngine({"mock": recorder}).run(
+        loaded, output_root=tmp_path / "runs", run_id="scheduled-stimuli"
+    )
+
+    assert len(result.public_posts) == 4
+    assert len(result.public_stimuli) == 2
+    assert len(result.soliloquies) == 4
+    assert [len(context.public_feed) for _agent, context in recorder.calls] == [1, 1, 4, 4]
+    assert all(
+        context.public_feed[0].event_type == "stimulus" for _agent, context in recorder.calls
+    )
+    assert [item.sequence for item in result.public_stimuli] == [1, 4]
+    assert [item.sequence for item in result.public_posts] == [2, 3, 5, 6]
+
+    bundle = Path(result.bundle_path)
+    public_posts = (bundle / "public.jsonl").read_text(encoding="utf-8")
+    public_stimuli = (bundle / "public" / "stimuli.jsonl").read_text(encoding="utf-8")
+    private_events = (bundle / "private" / "soliloquies.jsonl").read_text(encoding="utf-8")
+    manifest = json.loads((bundle / "manifest.json").read_text(encoding="utf-8"))
+
+    assert "developer-opening" not in public_posts
+    assert "developer-opening" in public_stimuli
+    assert "developer-opening" not in private_events
+    assert manifest["counts"]["public_posts"] == 4
+    assert manifest["counts"]["public_stimuli"] == 2
+    assert manifest["counts"]["soliloquies"] == 4
+    assert [item["id"] for item in manifest["inputs"]["scheduled_stimuli"]] == [
+        "developer-opening",
+        "developer-decision",
+    ]

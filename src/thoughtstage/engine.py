@@ -16,8 +16,10 @@ from thoughtstage.models import (
     ModelUsageEvent,
     PrivateMemory,
     PublicPost,
+    PublicStimulus,
     RunResult,
     Schedule,
+    ScheduledStimulus,
     Soliloquy,
     TurnOrder,
 )
@@ -72,6 +74,35 @@ class ExperimentEngine:
             raise RunBundleResumeError("existing run event prefix does not match the experiment")
         if soliloquy.post_event_id != post.event_id:
             raise RunBundleResumeError("existing private event does not match its public post")
+
+    @staticmethod
+    def _stimulus_event(
+        *,
+        stimulus: ScheduledStimulus,
+        experiment_id: str,
+        sequence: int,
+    ) -> PublicStimulus:
+        return PublicStimulus(
+            event_id=f"stimulus-r{stimulus.round:04d}-{stimulus.id}-{sequence:06d}",
+            sequence=sequence,
+            experiment_id=experiment_id,
+            round_number=stimulus.round,
+            stimulus_id=stimulus.id,
+            source_id=stimulus.source_id,
+            display_name=stimulus.display_name,
+            content=stimulus.content,
+        )
+
+    @staticmethod
+    def _validate_replayed_stimulus(
+        *,
+        actual: PublicStimulus,
+        expected: PublicStimulus,
+    ) -> None:
+        if actual != expected:
+            raise RunBundleResumeError(
+                "existing public stimulus prefix does not match the experiment"
+            )
 
     @staticmethod
     def _validate_replayed_usage(
@@ -176,16 +207,20 @@ class ExperimentEngine:
             writer = RunBundleWriter(loaded, output_root, run_id=run_id)
             existing_posts: list[PublicPost] = []
             existing_soliloquies: list[Soliloquy] = []
+            existing_stimuli: list[PublicStimulus] = []
             existing_model_usage: list[ModelUsageEvent] = []
             existing_file_tool_events: list[FileToolEvent] = []
         else:
             writer = RunBundleWriter.resume(loaded, resume_path)
             existing_posts, existing_soliloquies = writer.existing_events()
+            existing_stimuli = writer.existing_stimuli()
             existing_model_usage = writer.existing_model_usage()
             existing_file_tool_events = writer.existing_file_tool_events()
         self._validate_replayed_usage(existing_model_usage, existing_posts, config.agents)
         self._validate_replayed_file_tools(existing_file_tool_events, existing_posts, config.agents)
         public_posts: list[PublicPost] = []
+        public_stimuli: list[PublicStimulus] = []
+        public_feed: list[PublicPost | PublicStimulus] = []
         soliloquies: list[Soliloquy] = []
         model_usage: list[ModelUsageEvent] = list(existing_model_usage)
         file_tool_events: list[FileToolEvent] = list(existing_file_tool_events)
@@ -197,9 +232,36 @@ class ExperimentEngine:
             else None
         )
         replay_index = 0
+        stimulus_replay_index = 0
+        stimuli_by_round: dict[int, list[ScheduledStimulus]] = {}
+        for stimulus in config.stimuli:
+            stimuli_by_round.setdefault(stimulus.round, []).append(stimulus)
 
         for round_number in range(1, config.rounds + 1):
-            round_start_feed = tuple(public_posts)
+            for scheduled in stimuli_by_round.get(round_number, []):
+                expected_stimulus = self._stimulus_event(
+                    stimulus=scheduled,
+                    experiment_id=config.id,
+                    sequence=len(public_feed) + 1,
+                )
+                if stimulus_replay_index < len(existing_stimuli):
+                    stimulus = existing_stimuli[stimulus_replay_index]
+                    self._validate_replayed_stimulus(
+                        actual=stimulus,
+                        expected=expected_stimulus,
+                    )
+                    stimulus_replay_index += 1
+                else:
+                    if replay_index < len(existing_posts):
+                        raise RunBundleResumeError(
+                            "run bundle is missing a scheduled public stimulus"
+                        )
+                    stimulus = expected_stimulus
+                    writer.write_stimulus(stimulus)
+                public_stimuli.append(stimulus)
+                public_feed.append(stimulus)
+
+            round_start_feed = tuple(public_feed)
             pending_posts: list[PublicPost] = []
             pending_soliloquies: list[Soliloquy] = []
             pending_generated: list[bool] = []
@@ -210,7 +272,7 @@ class ExperimentEngine:
             )
 
             for agent in ordered_agents:
-                sequence = len(public_posts) + len(pending_posts) + 1
+                sequence = len(public_feed) + len(pending_posts) + 1
                 if replay_index < len(existing_posts):
                     post = existing_posts[replay_index]
                     soliloquy = existing_soliloquies[replay_index]
@@ -232,6 +294,7 @@ class ExperimentEngine:
                         pending_file_tools.append(())
                     else:
                         public_posts.append(post)
+                        public_feed.append(post)
                         soliloquies.append(soliloquy)
                     continue
 
@@ -243,7 +306,7 @@ class ExperimentEngine:
                 feed = (
                     round_start_feed
                     if config.schedule is Schedule.SIMULTANEOUS
-                    else tuple(public_posts)
+                    else tuple(public_feed)
                 )
                 own_history = (
                     tuple(private_by_agent[agent.id])
@@ -339,6 +402,7 @@ class ExperimentEngine:
                     pending_file_tools.append(tool_events)
                 else:
                     public_posts.append(post)
+                    public_feed.append(post)
                     soliloquies.append(soliloquy)
                     writer.write_post(post)
                     writer.write_soliloquy(soliloquy)
@@ -359,6 +423,7 @@ class ExperimentEngine:
                     strict=True,
                 ):
                     public_posts.append(post)
+                    public_feed.append(post)
                     soliloquies.append(soliloquy)
                     model_usage.extend(usage_events)
                     file_tool_events.extend(tool_events)
@@ -374,9 +439,14 @@ class ExperimentEngine:
             raise RunBundleResumeError(
                 "run bundle contains more events than the experiment declares"
             )
+        if stimulus_replay_index != len(existing_stimuli):
+            raise RunBundleResumeError(
+                "run bundle contains more public stimuli than the experiment declares"
+            )
 
         writer.finish(
             public_posts=len(public_posts),
+            public_stimuli=len(public_stimuli),
             soliloquies=len(soliloquies),
             model_calls=len(model_usage),
             file_tool_calls=len(file_tool_events),
@@ -385,6 +455,7 @@ class ExperimentEngine:
             run_id=writer.run_id,
             bundle_path=str(writer.path),
             public_posts=tuple(public_posts),
+            public_stimuli=tuple(public_stimuli),
             soliloquies=tuple(soliloquies),
             model_usage=tuple(model_usage),
             file_tool_events=tuple(file_tool_events),

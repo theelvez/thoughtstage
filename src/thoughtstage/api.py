@@ -34,7 +34,8 @@ def experiment_schema() -> dict:
 def design_contract() -> dict:
     return {
         "shared_system_prompt": "byte-identical for every agent",
-        "public_channel": "all eligible posts are visible to all agents",
+        "public_channel": "all eligible posts and stimuli are visible to all agents",
+        "scheduled_stimuli": "typed public events declared in the experiment manifest",
         "private_channel": "soliloquies are researcher-only",
         "model_identity": "provider and model metadata are never placed in agent context",
         "default_private_memory": "none",

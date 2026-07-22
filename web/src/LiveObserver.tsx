@@ -10,6 +10,7 @@ type Agent = {
 
 type Counts = {
   public_posts: number;
+  public_stimuli: number;
   soliloquies: number;
   model_calls: number;
   file_tool_calls: number;
@@ -27,6 +28,7 @@ type RunSummary = {
 };
 
 type PublicPost = {
+  event_type?: "post";
   event_id: string;
   sequence: number;
   experiment_id: string;
@@ -35,6 +37,20 @@ type PublicPost = {
   display_name: string;
   content: string;
 };
+
+type PublicStimulus = {
+  event_type: "stimulus";
+  event_id: string;
+  sequence: number;
+  experiment_id: string;
+  round_number: number;
+  stimulus_id: string;
+  source_id: string;
+  display_name: string;
+  content: string;
+};
+
+type PublicEvent = PublicPost | PublicStimulus;
 
 type Soliloquy = {
   event_id: string;
@@ -55,7 +71,8 @@ type UsageSummary = {
 };
 
 type RunDetail = RunSummary & {
-  posts: PublicPost[];
+  posts: PublicEvent[];
+  stimuli: PublicStimulus[];
   soliloquies: Soliloquy[];
   usage_summary: UsageSummary;
   private_briefings: Record<string, string>;
@@ -77,6 +94,10 @@ function shortModel(model: string) {
   return model.split("/").at(-1) ?? model;
 }
 
+function isStimulus(event: PublicEvent): event is PublicStimulus {
+  return event.event_type === "stimulus";
+}
+
 function formatTokens(value: number) {
   return new Intl.NumberFormat(undefined, {
     notation: "compact",
@@ -93,7 +114,7 @@ function PostCard({
   newest,
   onToggle,
 }: {
-  post: PublicPost;
+  post: PublicEvent;
   soliloquy?: Soliloquy;
   agent?: Agent;
   color: string;
@@ -101,15 +122,16 @@ function PostCard({
   newest: boolean;
   onToggle: () => void;
 }) {
+  const stimulus = isStimulus(post);
   return (
-    <article className={`feed-card ${newest ? "newest" : ""}`} style={{ "--agent": color } as React.CSSProperties}>
+    <article className={`feed-card ${stimulus ? "stimulus" : ""} ${newest ? "newest" : ""}`} style={{ "--agent": color } as React.CSSProperties}>
       <div className="feed-card-rail" aria-hidden="true" />
       <div className="feed-card-body">
         <header className="post-header">
-          <span className="agent-avatar">{post.display_name.charAt(0).toUpperCase()}</span>
+          <span className="agent-avatar">{stimulus ? "◆" : post.display_name.charAt(0).toUpperCase()}</span>
           <span className="post-byline">
             <strong>{post.display_name}</strong>
-            <small>{agent ? shortModel(agent.model) : "participant"}</small>
+            <small>{stimulus ? "scripted public stimulus" : agent ? shortModel(agent.model) : "participant"}</small>
           </span>
           <span className="post-index">
             Round {String(post.round_number).padStart(2, "0")} · #{String(post.sequence).padStart(2, "0")}
@@ -118,21 +140,25 @@ function PostCard({
 
         <p className="post-content">{post.content}</p>
 
-        <button
-          className={`soliloquy-toggle ${revealed ? "open" : ""}`}
-          type="button"
-          disabled={!soliloquy}
-          aria-expanded={revealed}
-          onClick={onToggle}
-        >
-          <span className="lock-dot" aria-hidden="true" />
-          {!soliloquy
-            ? "Soliloquy pending"
-            : revealed
-              ? "Close backstage"
-              : "Open soliloquy"}
-          {soliloquy && <span aria-hidden="true">{revealed ? "−" : "+"}</span>}
-        </button>
+        {stimulus ? (
+          <div className="stimulus-note">Declared in the experiment manifest · visible to every participant</div>
+        ) : (
+          <button
+            className={`soliloquy-toggle ${revealed ? "open" : ""}`}
+            type="button"
+            disabled={!soliloquy}
+            aria-expanded={revealed}
+            onClick={onToggle}
+          >
+            <span className="lock-dot" aria-hidden="true" />
+            {!soliloquy
+              ? "Soliloquy pending"
+              : revealed
+                ? "Close backstage"
+                : "Open soliloquy"}
+            {soliloquy && <span aria-hidden="true">{revealed ? "−" : "+"}</span>}
+          </button>
+        )}
 
         {revealed && soliloquy && (
           <section className="soliloquy-panel" aria-label={`${post.display_name} private soliloquy`}>
@@ -259,10 +285,11 @@ function LiveObserver() {
     : undefined;
   const posts = detail?.posts ?? [];
   const newestPost = posts.at(-1);
+  const agentPosts = posts.filter((post): post is PublicPost => !isStimulus(post));
   const currentRound = posts.reduce((highest, post) => Math.max(highest, post.round_number), 0);
   const totalRounds = detail?.execution.rounds ?? 0;
   const expectedTurns = totalRounds * (detail?.agents.length ?? 0);
-  const turnProgress = expectedTurns ? Math.min((posts.length / expectedTurns) * 100, 100) : 0;
+  const turnProgress = expectedTurns ? Math.min((agentPosts.length / expectedTurns) * 100, 100) : 0;
   const revealablePosts = posts.filter((post) => soliloquies.has(post.event_id));
   const allRevealed = revealablePosts.length > 0
     && revealablePosts.every((post) => revealed.has(post.event_id));
@@ -325,7 +352,8 @@ function LiveObserver() {
         </div>
         <div className="run-metrics">
           <div><strong>{String(currentRound).padStart(2, "0")}</strong><span>/ {String(totalRounds).padStart(2, "0")} rounds</span></div>
-          <div><strong>{posts.length}</strong><span>/ {expectedTurns || "—"} turns</span></div>
+          <div><strong>{agentPosts.length}</strong><span>/ {expectedTurns || "—"} turns</span></div>
+          <div><strong>{detail?.counts.public_stimuli ?? 0}</strong><span>stimuli</span></div>
           <div><strong>{detail?.soliloquies.length ?? 0}</strong><span>private</span></div>
           <div><strong>{detail?.counts.model_calls ?? 0}</strong><span>model calls</span></div>
           <div><strong>{detail?.counts.file_tool_calls ?? 0}</strong><span>file reads</span></div>
@@ -386,8 +414,8 @@ function LiveObserver() {
                   key={post.event_id}
                   post={post}
                   soliloquy={soliloquies.get(post.event_id)}
-                  agent={agents.get(post.agent_id)}
-                  color={colors.get(post.agent_id) ?? AGENT_COLORS[0]}
+                  agent={isStimulus(post) ? undefined : agents.get(post.agent_id)}
+                  color={isStimulus(post) ? "#9a6814" : colors.get(post.agent_id) ?? AGENT_COLORS[0]}
                   revealed={revealed.has(post.event_id)}
                   newest={post.event_id === newestPost?.event_id && detail?.status === "running"}
                   onToggle={() => {
@@ -414,9 +442,14 @@ function LiveObserver() {
 
           <div className="agent-list">
             {(detail?.agents ?? []).map((agent) => {
-              const agentPosts = posts.filter((post) => post.agent_id === agent.id);
-              const last = agentPosts.at(-1);
-              const active = newestPost?.agent_id === agent.id && detail?.status === "running";
+              const participantPosts = posts.filter(
+                (post): post is PublicPost => !isStimulus(post) && post.agent_id === agent.id,
+              );
+              const last = participantPosts.at(-1);
+              const active = newestPost !== undefined
+                && !isStimulus(newestPost)
+                && newestPost.agent_id === agent.id
+                && detail?.status === "running";
               const color = colors.get(agent.id) ?? AGENT_COLORS[0];
               const privateBriefing = detail?.private_briefings?.[agent.id];
               return (
@@ -426,7 +459,7 @@ function LiveObserver() {
                     <strong>{agent.display_name}</strong>
                     <small>{shortModel(agent.model)}</small>
                   </div>
-                  <div className="agent-count"><strong>{agentPosts.length}</strong><small>turns</small></div>
+                  <div className="agent-count"><strong>{participantPosts.length}</strong><small>turns</small></div>
                   <div className="agent-status">
                     <span>{active ? "On stage" : last ? `Last seen R${last.round_number}` : "Waiting"}</span>
                   </div>
