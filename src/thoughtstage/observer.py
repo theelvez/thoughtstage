@@ -90,7 +90,11 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
 
 
 def _summary(
-    manifest: dict[str, Any], posts: int, soliloquies: int, model_calls: int
+    manifest: dict[str, Any],
+    posts: int,
+    soliloquies: int,
+    model_calls: int,
+    file_tool_calls: int,
 ) -> dict[str, Any]:
     return {
         "run_id": manifest.get("run_id"),
@@ -104,6 +108,7 @@ def _summary(
             "public_posts": posts,
             "soliloquies": soliloquies,
             "model_calls": model_calls,
+            "file_tool_calls": file_tool_calls,
         },
     }
 
@@ -117,8 +122,9 @@ def read_run_bundle(run_id: str, *, root: Path | None = None) -> dict[str, Any]:
     posts = _read_jsonl(path / "public.jsonl")
     soliloquies = _read_jsonl(path / "private" / "soliloquies.jsonl")
     model_usage = _read_jsonl(path / "private" / "model_usage.jsonl")
+    file_tools = _read_jsonl(path / "private" / "file_tools.jsonl")
     private_briefings = _read_optional_json(path / "private" / "agent_briefings.json")
-    summary = _summary(manifest, len(posts), len(soliloquies), len(model_usage))
+    summary = _summary(manifest, len(posts), len(soliloquies), len(model_usage), len(file_tools))
     experiment = summary["experiment"]
     if "system_prompt" not in experiment:
         system_prompt = _read_system_prompt(path / "experiment.yaml")
@@ -128,6 +134,7 @@ def read_run_bundle(run_id: str, *, root: Path | None = None) -> dict[str, Any]:
         **summary,
         "posts": posts,
         "model_usage": model_usage,
+        "file_tools": file_tools,
         "usage_summary": summarize_model_usage(model_usage),
         "soliloquies": soliloquies,
         "private_briefings": private_briefings,
@@ -151,5 +158,8 @@ def list_run_bundles(*, root: Path | None = None) -> list[dict[str, Any]]:
         posts = _read_jsonl(path / "public.jsonl")
         soliloquies = _read_jsonl(path / "private" / "soliloquies.jsonl")
         model_usage = _read_jsonl(path / "private" / "model_usage.jsonl")
-        runs.append(_summary(manifest, len(posts), len(soliloquies), len(model_usage)))
+        file_tools = _read_jsonl(path / "private" / "file_tools.jsonl")
+        runs.append(
+            _summary(manifest, len(posts), len(soliloquies), len(model_usage), len(file_tools))
+        )
     return sorted(runs, key=lambda item: item.get("created_at") or "", reverse=True)

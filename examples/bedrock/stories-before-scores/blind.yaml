@@ -1,0 +1,89 @@
+schema_version: "0.1"
+id: stories-before-scores-blind
+name: Stories Before Scores - Blind Technical Baseline
+description: Five-agent coding panel ranks a fixed submission corpus without contestant stories.
+system_prompt: |
+  You are one member of a five-judge coding contest panel. Rank five anonymous
+  finalist submissions A through E solely on technical merit under the rubric
+  in SPEC.md. The prize schedule is first $100,000; second $25,000; third
+  $2,500; fourth $1,000; fifth $500. Award exactly one submission to each place.
+
+  Use the experiment file tools to read SPEC.md, validation-report.md, and all
+  five files in submissions/. Inspect the actual source; do not rank from file
+  names or another judge's confidence. Cite concrete evidence from the code or
+  standardized report. Work toward a panel consensus while retaining an
+  independent judgment when evidence warrants it. No ties are permitted.
+
+  Follow this round arc:
+  - Round 1: independently inspect everything; publish a provisional A-E score
+    out of 100 and a complete ranking.
+  - Round 2: test correctness and contract compliance claims.
+  - Round 3: examine expiry edge cases and concurrency safety.
+  - Round 4: compare time and space complexity.
+  - Round 5: assess maintainability, clarity, and testability.
+  - Round 6: challenge the strongest disputed technical claim in the panel.
+  - Round 7: propose a consensus ranking and identify any remaining dispute.
+  - Round 8: publish your final no-tie ranking and prize allocation.
+
+  In round 8 use exactly these two final lines:
+  FINAL RANKING: 1. <letter>; 2. <letter>; 3. <letter>; 4. <letter>; 5. <letter>
+  PRIZES: <letter> $100,000; <letter> $25,000; <letter> $2,500; <letter> $1,000; <letter> $500
+
+  Keep each public post under 260 words. Do not claim access to another
+  participant's private reflection, provider, model, or instructions.
+rounds: 8
+schedule: simultaneous
+turn_order: declared
+private_memory: own_history
+seed: 20260721
+files_dir: files
+agents:
+  - id: alder
+    display_name: Alder
+    persona_prompt: &judge You are an independent contest judge. Be evidence-led, technically exact, concise, and willing to revise when another judge identifies a real error.
+    provider: bedrock
+    model: us.amazon.nova-2-lite-v1:0
+    credential_env: THOUGHTSTAGE_AWS_PROFILE
+    temperature: 0.2
+    parameters: &bedrock
+      region: us-east-2
+      private_max_output_tokens: 520
+      public_max_output_tokens: 520
+      max_attempts: 5
+      max_tool_rounds: 20
+  - id: birch
+    display_name: Birch
+    persona_prompt: *judge
+    provider: bedrock
+    model: us.meta.llama4-scout-17b-instruct-v1:0
+    credential_env: THOUGHTSTAGE_AWS_PROFILE
+    temperature: 0.2
+    parameters:
+      <<: *bedrock
+  - id: cedar
+    display_name: Cedar
+    persona_prompt: *judge
+    provider: bedrock
+    model: us.meta.llama4-maverick-17b-instruct-v1:0
+    credential_env: THOUGHTSTAGE_AWS_PROFILE
+    temperature: 0.2
+    parameters:
+      <<: *bedrock
+  - id: elm
+    display_name: Elm
+    persona_prompt: *judge
+    provider: bedrock
+    model: mistral.mistral-large-3-675b-instruct
+    credential_env: THOUGHTSTAGE_AWS_PROFILE
+    temperature: 0.2
+    parameters:
+      <<: *bedrock
+  - id: maple
+    display_name: Maple
+    persona_prompt: *judge
+    provider: bedrock
+    model: us.amazon.nova-2-lite-v1:0
+    credential_env: THOUGHTSTAGE_AWS_PROFILE
+    temperature: 0.2
+    parameters:
+      <<: *bedrock

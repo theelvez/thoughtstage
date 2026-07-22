@@ -18,6 +18,7 @@ The bundle records:
 - schedule, turn order, private-memory policy, round count, and seed;
 - provider and model identifiers;
 - provider-reported token usage for successful calls, when available;
+- content-free experiment file-tool access records;
 - inference parameters and credential environment-variable names; and
 - Python and platform versions.
 
@@ -35,6 +36,14 @@ These values are operational telemetry, not an invoice. Providers can omit field
 revise accounting semantics, or bill with meters that differ from response token
 counts. Use the cloud provider's cost-management data as the authoritative spend
 record.
+
+## Experiment file-tool accounting
+
+`private/file_tools.jsonl` records model-requested experiment file operations.
+Each typed record links to a post and includes the phase, operation, validated
+relative path or query metadata, success status, result byte length, and result
+SHA-256. Tool result bodies and absolute filesystem roots are never copied into
+this ledger. The actual file inputs remain identified by `files.json` hashes.
 
 ## External-model limitations
 

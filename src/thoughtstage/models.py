@@ -33,6 +33,7 @@ class PrivateMemory(StrEnum):
 
 
 ModelUsagePhase = Literal["combined", "private", "public"]
+FileToolOperation = Literal["list_files", "file_info", "read_text", "search_text", "unknown"]
 
 
 class AgentConfig(StrictModel):
@@ -133,6 +134,38 @@ class ModelUsageEvent(StrictModel):
     response_id: str | None = Field(default=None, max_length=256)
 
 
+class FileToolCall(StrictModel):
+    """Provider-returned audit metadata for one experiment-file tool call."""
+
+    phase: ModelUsagePhase
+    tool_use_id: str = Field(min_length=1, max_length=256)
+    operation: FileToolOperation
+    success: bool
+    path: str | None = None
+    pattern: str | None = None
+    query: str | None = None
+    start_line: int | None = Field(default=None, ge=1)
+    end_line: int | None = Field(default=None, ge=1)
+    max_results: int | None = Field(default=None, ge=1, le=100)
+    result_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    result_bytes: int = Field(ge=0)
+    error_code: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9_]{1,63}$")
+
+
+class FileToolEvent(FileToolCall):
+    """Researcher-private run event for an audited experiment-file access."""
+
+    event_id: str
+    post_event_id: str
+    sequence: int = Field(ge=1)
+    tool_index: int = Field(ge=1)
+    experiment_id: str
+    round_number: int = Field(ge=1)
+    agent_id: str
+    provider: str
+    model: str
+
+
 class ModelOutput(StrictModel):
     post: str = Field(min_length=1)
     soliloquy: str = Field(min_length=1)
@@ -141,6 +174,7 @@ class ModelOutput(StrictModel):
 class ProviderResult(StrictModel):
     output: ModelOutput
     usage: tuple[ModelCallUsage, ...] = ()
+    file_tool_calls: tuple[FileToolCall, ...] = ()
 
 
 class RunResult(StrictModel):
@@ -149,3 +183,4 @@ class RunResult(StrictModel):
     public_posts: tuple[PublicPost, ...]
     soliloquies: tuple[Soliloquy, ...]
     model_usage: tuple[ModelUsageEvent, ...] = ()
+    file_tool_events: tuple[FileToolEvent, ...] = ()

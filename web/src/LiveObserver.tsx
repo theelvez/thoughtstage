@@ -12,6 +12,7 @@ type Counts = {
   public_posts: number;
   soliloquies: number;
   model_calls: number;
+  file_tool_calls: number;
 };
 
 type RunSummary = {
@@ -327,6 +328,7 @@ function LiveObserver() {
           <div><strong>{posts.length}</strong><span>/ {expectedTurns || "—"} turns</span></div>
           <div><strong>{detail?.soliloquies.length ?? 0}</strong><span>private</span></div>
           <div><strong>{detail?.counts.model_calls ?? 0}</strong><span>model calls</span></div>
+          <div><strong>{detail?.counts.file_tool_calls ?? 0}</strong><span>file reads</span></div>
           <div>
             <strong title={`${detail?.usage_summary.totals.input_tokens ?? 0} input / ${detail?.usage_summary.totals.output_tokens ?? 0} output tokens`}>
               {formatTokens(detail?.usage_summary.totals.input_tokens ?? 0)} / {formatTokens(detail?.usage_summary.totals.output_tokens ?? 0)}

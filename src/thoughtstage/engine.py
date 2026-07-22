@@ -7,9 +7,12 @@ from collections.abc import Mapping
 from pathlib import Path
 
 from thoughtstage.config import LoadedExperiment
+from thoughtstage.file_tools import ExperimentFileTools
+from thoughtstage.files import ExperimentFileReader
 from thoughtstage.models import (
     AgentConfig,
     AgentTurnContext,
+    FileToolEvent,
     ModelUsageEvent,
     PrivateMemory,
     PublicPost,
@@ -115,6 +118,51 @@ class ExperimentEngine:
         ):
             raise RunBundleResumeError("existing model usage call indexes are not contiguous")
 
+    @staticmethod
+    def _validate_replayed_file_tools(
+        events: list[FileToolEvent],
+        posts: list[PublicPost],
+        agents: tuple[AgentConfig, ...],
+    ) -> None:
+        posts_by_id = {post.event_id: post for post in posts}
+        agents_by_id = {agent.id: agent for agent in agents}
+        event_ids: set[str] = set()
+        tool_indexes: dict[str, set[int]] = {}
+        for item in events:
+            post = posts_by_id.get(item.post_event_id)
+            agent = agents_by_id.get(item.agent_id)
+            if post is None or agent is None:
+                raise RunBundleResumeError(
+                    "existing file tool event does not match the run event prefix"
+                )
+            expected = (
+                post.experiment_id,
+                post.round_number,
+                post.agent_id,
+                post.sequence,
+                agent.provider,
+                agent.model,
+            )
+            actual = (
+                item.experiment_id,
+                item.round_number,
+                item.agent_id,
+                item.sequence,
+                item.provider,
+                item.model,
+            )
+            indexes = tool_indexes.setdefault(item.post_event_id, set())
+            if item.event_id in event_ids or item.tool_index in indexes or actual != expected:
+                raise RunBundleResumeError(
+                    "existing file tool event does not match the run event prefix"
+                )
+            event_ids.add(item.event_id)
+            indexes.add(item.tool_index)
+        if any(
+            sorted(indexes) != list(range(1, len(indexes) + 1)) for indexes in tool_indexes.values()
+        ):
+            raise RunBundleResumeError("existing file tool indexes are not contiguous")
+
     def run(
         self,
         loaded: LoadedExperiment,
@@ -129,16 +177,25 @@ class ExperimentEngine:
             existing_posts: list[PublicPost] = []
             existing_soliloquies: list[Soliloquy] = []
             existing_model_usage: list[ModelUsageEvent] = []
+            existing_file_tool_events: list[FileToolEvent] = []
         else:
             writer = RunBundleWriter.resume(loaded, resume_path)
             existing_posts, existing_soliloquies = writer.existing_events()
             existing_model_usage = writer.existing_model_usage()
+            existing_file_tool_events = writer.existing_file_tool_events()
         self._validate_replayed_usage(existing_model_usage, existing_posts, config.agents)
+        self._validate_replayed_file_tools(existing_file_tool_events, existing_posts, config.agents)
         public_posts: list[PublicPost] = []
         soliloquies: list[Soliloquy] = []
         model_usage: list[ModelUsageEvent] = list(existing_model_usage)
+        file_tool_events: list[FileToolEvent] = list(existing_file_tool_events)
         private_by_agent: dict[str, list[str]] = {agent.id: [] for agent in config.agents}
         available_files = tuple(item["path"] for item in writer.files)
+        file_tools = (
+            ExperimentFileTools(ExperimentFileReader(loaded.files_root))
+            if loaded.files_root is not None
+            else None
+        )
         replay_index = 0
 
         for round_number in range(1, config.rounds + 1):
@@ -147,6 +204,7 @@ class ExperimentEngine:
             pending_soliloquies: list[Soliloquy] = []
             pending_generated: list[bool] = []
             pending_usage: list[tuple[ModelUsageEvent, ...]] = []
+            pending_file_tools: list[tuple[FileToolEvent, ...]] = []
             ordered_agents = self._order_agents(
                 config.agents, config.turn_order, config.seed, round_number
             )
@@ -171,6 +229,7 @@ class ExperimentEngine:
                         pending_soliloquies.append(soliloquy)
                         pending_generated.append(False)
                         pending_usage.append(())
+                        pending_file_tools.append(())
                     else:
                         public_posts.append(post)
                         soliloquies.append(soliloquy)
@@ -205,6 +264,7 @@ class ExperimentEngine:
                     agent=agent,
                     context=context,
                     seed=config.seed,
+                    file_tools=file_tools,
                 )
                 output = provider_result.output
                 post_event_id = f"post-r{round_number:04d}-{agent.id}-{sequence:06d}"
@@ -251,6 +311,24 @@ class ExperimentEngine:
                     )
                     for call_index, item in enumerate(provider_result.usage, start=1)
                 )
+                tool_events = tuple(
+                    FileToolEvent(
+                        **item.model_dump(),
+                        event_id=(
+                            f"file-tool-r{round_number:04d}-{agent.id}-"
+                            f"{sequence:06d}-tool{tool_index:02d}"
+                        ),
+                        post_event_id=post_event_id,
+                        sequence=sequence,
+                        tool_index=tool_index,
+                        experiment_id=config.id,
+                        round_number=round_number,
+                        agent_id=agent.id,
+                        provider=agent.provider,
+                        model=agent.model,
+                    )
+                    for tool_index, item in enumerate(provider_result.file_tool_calls, start=1)
+                )
 
                 private_by_agent[agent.id].append(output.soliloquy)
                 if config.schedule is Schedule.SIMULTANEOUS:
@@ -258,6 +336,7 @@ class ExperimentEngine:
                     pending_soliloquies.append(soliloquy)
                     pending_generated.append(True)
                     pending_usage.append(usage_events)
+                    pending_file_tools.append(tool_events)
                 else:
                     public_posts.append(post)
                     soliloquies.append(soliloquy)
@@ -266,23 +345,30 @@ class ExperimentEngine:
                     model_usage.extend(usage_events)
                     for item in usage_events:
                         writer.write_model_usage(item)
+                    file_tool_events.extend(tool_events)
+                    for item in tool_events:
+                        writer.write_file_tool_event(item)
 
             if config.schedule is Schedule.SIMULTANEOUS:
-                for post, soliloquy, usage_events, generated in zip(
+                for post, soliloquy, usage_events, tool_events, generated in zip(
                     pending_posts,
                     pending_soliloquies,
                     pending_usage,
+                    pending_file_tools,
                     pending_generated,
                     strict=True,
                 ):
                     public_posts.append(post)
                     soliloquies.append(soliloquy)
                     model_usage.extend(usage_events)
+                    file_tool_events.extend(tool_events)
                     if generated:
                         writer.write_post(post)
                         writer.write_soliloquy(soliloquy)
                         for item in usage_events:
                             writer.write_model_usage(item)
+                        for item in tool_events:
+                            writer.write_file_tool_event(item)
 
         if replay_index != len(existing_posts):
             raise RunBundleResumeError(
@@ -293,6 +379,7 @@ class ExperimentEngine:
             public_posts=len(public_posts),
             soliloquies=len(soliloquies),
             model_calls=len(model_usage),
+            file_tool_calls=len(file_tool_events),
         )
         return RunResult(
             run_id=writer.run_id,
@@ -300,4 +387,5 @@ class ExperimentEngine:
             public_posts=tuple(public_posts),
             soliloquies=tuple(soliloquies),
             model_usage=tuple(model_usage),
+            file_tool_events=tuple(file_tool_events),
         )

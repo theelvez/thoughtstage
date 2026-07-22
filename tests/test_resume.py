@@ -9,6 +9,7 @@ from typer.testing import CliRunner
 from thoughtstage.cli import app
 from thoughtstage.config import LoadedExperiment, load_experiment
 from thoughtstage.engine import ExperimentEngine
+from thoughtstage.file_tools import ExperimentFileTools
 from thoughtstage.models import (
     AgentConfig,
     AgentTurnContext,
@@ -26,7 +27,12 @@ class StopAfterOneProvider:
         self.calls = 0
 
     def generate(
-        self, *, agent: AgentConfig, context: AgentTurnContext, seed: int
+        self,
+        *,
+        agent: AgentConfig,
+        context: AgentTurnContext,
+        seed: int,
+        file_tools: ExperimentFileTools | None = None,
     ) -> ProviderResult:
         self.calls += 1
         if self.calls == 2:
@@ -53,7 +59,12 @@ class ResumeProvider:
         self.calls: list[tuple[AgentConfig, AgentTurnContext]] = []
 
     def generate(
-        self, *, agent: AgentConfig, context: AgentTurnContext, seed: int
+        self,
+        *,
+        agent: AgentConfig,
+        context: AgentTurnContext,
+        seed: int,
+        file_tools: ExperimentFileTools | None = None,
     ) -> ProviderResult:
         self.calls.append((agent, context))
         return ProviderResult(

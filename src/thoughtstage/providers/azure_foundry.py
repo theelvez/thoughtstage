@@ -15,6 +15,7 @@ from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 from openai import OpenAI, RateLimitError
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from thoughtstage.file_tools import ExperimentFileTools
 from thoughtstage.models import (
     AgentConfig,
     AgentTurnContext,
@@ -490,7 +491,9 @@ class AzureFoundryProvider:
         agent: AgentConfig,
         context: AgentTurnContext,
         seed: int,
+        file_tools: ExperimentFileTools | None = None,
     ) -> ProviderResult:
+        del file_tools
         del seed  # Foundry does not expose a portable seed across all catalog models.
         settings = self._settings(agent)
         client = self._client(agent, settings)

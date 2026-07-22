@@ -10,9 +10,11 @@ import boto3
 from botocore.config import Config
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from thoughtstage.file_tools import ExperimentFileTools
 from thoughtstage.models import (
     AgentConfig,
     AgentTurnContext,
+    FileToolCall,
     ModelCallUsage,
     ModelOutput,
     ModelUsagePhase,
@@ -49,6 +51,7 @@ class BedrockSettings(BaseModel):
     connect_timeout_seconds: float = Field(default=10, gt=0, le=3600)
     timeout_seconds: float = Field(default=120, gt=0, le=3600)
     max_attempts: int = Field(default=5, ge=1, le=20)
+    max_tool_rounds: int = Field(default=12, ge=1, le=100)
     send_temperature: bool = True
     top_p: float | None = Field(default=None, gt=0, le=1)
     service_tier: Literal["default", "flex", "priority"] | None = None
@@ -67,11 +70,18 @@ def _default_client_factory(
     return session.client("bedrock-runtime", config=config)
 
 
-def _response_text(response: dict[str, Any]) -> str:
+def _response_message(response: dict[str, Any]) -> dict[str, Any]:
     try:
-        content = response["output"]["message"]["content"]
+        message = response["output"]["message"]
     except (KeyError, TypeError) as exc:
         raise BedrockResponseError("Bedrock returned no message content") from exc
+    if not isinstance(message, dict) or not isinstance(message.get("content"), list):
+        raise BedrockResponseError("Bedrock returned invalid message content")
+    return message
+
+
+def _response_text(response: dict[str, Any]) -> str:
+    content = _response_message(response)["content"]
     if not isinstance(content, list):
         raise BedrockResponseError("Bedrock returned invalid message content")
     text = "".join(
@@ -105,6 +115,21 @@ def _model_call_usage(
         )
     except (KeyError, TypeError, ValidationError) as exc:
         raise BedrockResponseError("Bedrock returned invalid model usage metadata") from exc
+
+
+def _bedrock_tool_config(file_tools: ExperimentFileTools) -> dict[str, Any]:
+    return {
+        "tools": [
+            {
+                "toolSpec": {
+                    "name": definition["name"],
+                    "description": definition["description"],
+                    "inputSchema": {"json": definition["input_schema"]},
+                }
+            }
+            for definition in file_tools.definitions
+        ]
+    }
 
 
 def _render_context(context: AgentTurnContext, agent: AgentConfig) -> str:
@@ -166,7 +191,7 @@ class BedrockProvider:
                     f"an AWS profile name for agent {agent.id!r}"
                 )
         config = Config(
-            retries={"max_attempts": settings.max_attempts, "mode": "adaptive"},
+            retries={"total_max_attempts": settings.max_attempts, "mode": "adaptive"},
             connect_timeout=settings.connect_timeout_seconds,
             read_timeout=settings.timeout_seconds,
         )
@@ -186,6 +211,7 @@ class BedrockProvider:
         instructions: str,
         input_text: str,
         max_output_tokens: int,
+        file_tools: ExperimentFileTools | None,
     ) -> dict[str, Any]:
         inference_config: dict[str, Any] = {"maxTokens": max_output_tokens}
         if settings.send_temperature:
@@ -205,7 +231,108 @@ class BedrockProvider:
         }
         if settings.service_tier is not None:
             request["serviceTier"] = {"type": settings.service_tier}
+        if file_tools is not None and context.available_files:
+            request["toolConfig"] = _bedrock_tool_config(file_tools)
         return request
+
+    @staticmethod
+    def _converse_text(
+        *,
+        client: _BedrockRuntimeClient,
+        request: dict[str, Any],
+        phase: ModelUsagePhase,
+        file_tools: ExperimentFileTools | None,
+        max_tool_rounds: int,
+    ) -> tuple[str, tuple[ModelCallUsage, ...], tuple[FileToolCall, ...]]:
+        usage: list[ModelCallUsage] = []
+        calls: list[FileToolCall] = []
+        tool_rounds = 0
+        evidence_by_hash: dict[str, str] = {}
+
+        try:
+            initial_input = request["messages"][0]["content"][0]["text"]
+        except (KeyError, IndexError, TypeError) as exc:  # pragma: no cover - internal contract
+            raise BedrockResponseError("Bedrock request has no initial text input") from exc
+
+        while True:
+            response = client.converse(**request)
+            call_usage = _model_call_usage(response, phase)
+            if call_usage is not None:
+                usage.append(call_usage)
+            message = _response_message(response)
+            tool_blocks = [
+                block["toolUse"]
+                for block in message["content"]
+                if isinstance(block, dict) and isinstance(block.get("toolUse"), dict)
+            ]
+            if not tool_blocks:
+                return _response_text(response), tuple(usage), tuple(calls)
+            if file_tools is None or "toolConfig" not in request:
+                raise BedrockResponseError("Bedrock requested an unavailable experiment file tool")
+
+            tool_rounds += 1
+            if tool_rounds > max_tool_rounds:
+                evidence = "\n\n".join(evidence_by_hash.values())[:200_000]
+                fallback_request = {
+                    key: value
+                    for key, value in request.items()
+                    if key not in {"messages", "toolConfig"}
+                }
+                fallback_request["system"] = [
+                    *request["system"],
+                    {
+                        "text": (
+                            "The experiment file-tool budget is exhausted. Do not request "
+                            "additional tools. Complete the requested output now using the "
+                            "evidence already gathered below."
+                        )
+                    },
+                ]
+                fallback_request["messages"] = [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "text": (
+                                    f"{initial_input}\n\nEvidence gathered from experiment "
+                                    f"files:\n{evidence}"
+                                )
+                            }
+                        ],
+                    }
+                ]
+                fallback_response = client.converse(**fallback_request)
+                fallback_usage = _model_call_usage(fallback_response, phase)
+                if fallback_usage is not None:
+                    usage.append(fallback_usage)
+                return _response_text(fallback_response), tuple(usage), tuple(calls)
+            request["messages"].append(message)
+            tool_results: list[dict[str, Any]] = []
+            for tool_use in tool_blocks:
+                tool_use_id = tool_use.get("toolUseId")
+                name = tool_use.get("name")
+                if not isinstance(tool_use_id, str) or not tool_use_id or len(tool_use_id) > 256:
+                    raise BedrockResponseError("Bedrock returned an invalid tool use id")
+                if not isinstance(name, str) or not name:
+                    raise BedrockResponseError("Bedrock returned an invalid tool name")
+                result_text, call = file_tools.execute(
+                    name=name,
+                    tool_use_id=tool_use_id,
+                    phase=phase,
+                    raw_input=tool_use.get("input"),
+                )
+                calls.append(call)
+                evidence_by_hash.setdefault(call.result_sha256, result_text)
+                tool_results.append(
+                    {
+                        "toolResult": {
+                            "toolUseId": tool_use_id,
+                            "content": [{"text": result_text}],
+                            "status": "success" if call.success else "error",
+                        }
+                    }
+                )
+            request["messages"].append({"role": "user", "content": tool_results})
 
     def generate(
         self,
@@ -213,6 +340,7 @@ class BedrockProvider:
         agent: AgentConfig,
         context: AgentTurnContext,
         seed: int,
+        file_tools: ExperimentFileTools | None = None,
     ) -> ProviderResult:
         del seed  # Converse does not expose a portable seed across Bedrock models.
         settings = self._settings(agent)
@@ -225,8 +353,9 @@ class BedrockProvider:
             "explicitly elicited reflection, not hidden chain of thought. Do not address "
             "the public audience and do not claim access to anyone else's private state."
         )
-        private_response = client.converse(
-            **self._request(
+        soliloquy, private_usage, private_tool_calls = self._converse_text(
+            client=client,
+            request=self._request(
                 agent=agent,
                 context=context,
                 settings=settings,
@@ -234,9 +363,12 @@ class BedrockProvider:
                 instructions=private_instructions,
                 input_text=rendered_context,
                 max_output_tokens=settings.private_max_output_tokens,
-            )
+                file_tools=file_tools,
+            ),
+            phase="private",
+            file_tools=file_tools,
+            max_tool_rounds=settings.max_tool_rounds,
         )
-        soliloquy = _response_text(private_response)
 
         public_instructions = (
             f"{context.system_prompt}\n\n"
@@ -244,8 +376,9 @@ class BedrockProvider:
             "reflection to inform the post, but never quote, label, or disclose it."
         )
         public_input = f"{rendered_context}\n\nYour private reflection for this turn:\n{soliloquy}"
-        public_response = client.converse(
-            **self._request(
+        post, public_usage, public_tool_calls = self._converse_text(
+            client=client,
+            request=self._request(
                 agent=agent,
                 context=context,
                 settings=settings,
@@ -253,12 +386,14 @@ class BedrockProvider:
                 instructions=public_instructions,
                 input_text=public_input,
                 max_output_tokens=settings.public_max_output_tokens,
-            )
+                file_tools=None,
+            ),
+            phase="public",
+            file_tools=None,
+            max_tool_rounds=settings.max_tool_rounds,
         )
-
-        private_usage = _model_call_usage(private_response, "private")
-        public_usage = _model_call_usage(public_response, "public")
         return ProviderResult(
-            output=ModelOutput(post=_response_text(public_response), soliloquy=soliloquy),
-            usage=tuple(item for item in (private_usage, public_usage) if item is not None),
+            output=ModelOutput(post=post, soliloquy=soliloquy),
+            usage=private_usage + public_usage,
+            file_tool_calls=private_tool_calls + public_tool_calls,
         )

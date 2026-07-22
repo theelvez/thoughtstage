@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import pytest
 
 from thoughtstage.engine import ExperimentEngine
+from thoughtstage.file_tools import ExperimentFileTools
+from thoughtstage.files import ExperimentFileReader
 from thoughtstage.models import AgentConfig, AgentTurnContext, PublicPost
 from thoughtstage.providers.bedrock import (
     BedrockConfigurationError,
@@ -157,7 +160,10 @@ def test_reflect_then_post_keeps_binding_metadata_out_of_model_context(
     factory_call = factory.calls[0]
     assert factory_call["profile_name"] == "thoughtstage-bedrock"
     assert factory_call["region_name"] == "us-east-2"
-    assert factory_call["config"].retries == {"max_attempts": 5, "mode": "adaptive"}
+    assert factory_call["config"].retries == {
+        "total_max_attempts": 5,
+        "mode": "adaptive",
+    }
     assert factory_call["config"].connect_timeout == 10
     assert factory_call["config"].read_timeout == 120
 
@@ -282,3 +288,112 @@ def test_invalid_usage_response_is_rejected(
                 FakeBedrockClient([private_response, public_response])
             )
         ).generate(agent=bedrock_agent(), context=context, seed=0)
+
+
+def test_converse_executes_bounded_file_tool_and_returns_private_audit(
+    context: AgentTurnContext,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ATLAS_AWS_PROFILE", "thoughtstage-bedrock")
+    (tmp_path / "brief.txt").write_text("technical evidence", encoding="utf-8")
+    tool_request = bedrock_response("ignored", request_id="tool-request")
+    tool_request["stopReason"] = "tool_use"
+    tool_request["output"]["message"]["content"] = [
+        {
+            "toolUse": {
+                "toolUseId": "read-1",
+                "name": "read_text",
+                "input": {"path": "brief.txt", "start_line": 1},
+            }
+        }
+    ]
+    client = FakeBedrockClient(
+        [
+            tool_request,
+            bedrock_response("I found evidence.", request_id="private-final"),
+            bedrock_response("Evidence supports A.", request_id="public-final"),
+        ]
+    )
+
+    result = BedrockProvider(client_factory=RecordingClientFactory(client)).generate(
+        agent=bedrock_agent(),
+        context=context,
+        seed=0,
+        file_tools=ExperimentFileTools(ExperimentFileReader(tmp_path)),
+    )
+
+    assert result.output.soliloquy == "I found evidence."
+    assert result.output.post == "Evidence supports A."
+    assert [item.phase for item in result.usage] == ["private", "private", "public"]
+    assert len(result.file_tool_calls) == 1
+    audit = result.file_tool_calls[0]
+    assert audit.operation == "read_text"
+    assert audit.path == "brief.txt"
+    assert audit.success is True
+    assert "technical evidence" not in audit.model_dump_json()
+    assert str(tmp_path) not in audit.model_dump_json()
+    assert "toolConfig" in client.calls[0]
+    assert "toolConfig" not in client.calls[-1]
+    tool_result = client.calls[1]["messages"][-1]["content"][0]["toolResult"]
+    assert "technical evidence" in tool_result["content"][0]["text"]
+
+
+def test_file_tool_round_limit_falls_back_to_tool_free_completion(
+    context: AgentTurnContext,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ATLAS_AWS_PROFILE", "thoughtstage-bedrock")
+    (tmp_path / "brief.txt").write_text("evidence", encoding="utf-8")
+
+    def tool_response(tool_use_id: str) -> dict[str, Any]:
+        response = bedrock_response("ignored", request_id=tool_use_id)
+        response["stopReason"] = "tool_use"
+        response["output"]["message"]["content"] = [
+            {
+                "toolUse": {
+                    "toolUseId": tool_use_id,
+                    "name": "read_text",
+                    "input": {"path": "brief.txt"},
+                }
+            }
+        ]
+        return response
+
+    agent = bedrock_agent(
+        parameters={
+            "region": "us-east-2",
+            "private_max_output_tokens": 300,
+            "public_max_output_tokens": 200,
+            "max_tool_rounds": 1,
+        }
+    )
+    client = FakeBedrockClient(
+        [
+            tool_response("one"),
+            tool_response("two"),
+            bedrock_response("Reflection from bounded evidence.", request_id="fallback"),
+            bedrock_response("Public post.", request_id="public"),
+        ]
+    )
+    result = BedrockProvider(client_factory=RecordingClientFactory(client)).generate(
+        agent=agent,
+        context=context,
+        seed=0,
+        file_tools=ExperimentFileTools(ExperimentFileReader(tmp_path)),
+    )
+
+    assert result.output.soliloquy == "Reflection from bounded evidence."
+    assert result.output.post == "Public post."
+    assert len(result.file_tool_calls) == 1
+    assert [item.phase for item in result.usage] == [
+        "private",
+        "private",
+        "private",
+        "public",
+    ]
+    assert "toolConfig" not in client.calls[2]
+    fallback_text = client.calls[2]["messages"][0]["content"][0]["text"]
+    assert "evidence" in fallback_text
+    assert "brief.txt" in fallback_text

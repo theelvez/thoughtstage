@@ -105,6 +105,7 @@ def test_list_run_bundles_uses_live_stream_counts(tmp_path: Path) -> None:
         "public_posts": 1,
         "soliloquies": 1,
         "model_calls": 1,
+        "file_tool_calls": 0,
     }
 
 

@@ -16,7 +16,7 @@ from pydantic import ValidationError
 from thoughtstage import __version__
 from thoughtstage.config import LoadedExperiment
 from thoughtstage.files import ExperimentFileReader
-from thoughtstage.models import ModelUsageEvent, PublicPost, Soliloquy
+from thoughtstage.models import FileToolEvent, ModelUsageEvent, PublicPost, Soliloquy
 
 
 class RunBundleResumeError(ValueError):
@@ -154,7 +154,12 @@ class RunBundleWriter:
                 "files": self.files,
                 "private_briefings": private_briefing_inputs,
             },
-            "counts": {"public_posts": 0, "soliloquies": 0, "model_calls": 0},
+            "counts": {
+                "public_posts": 0,
+                "soliloquies": 0,
+                "model_calls": 0,
+                "file_tool_calls": 0,
+            },
         }
         self._write_manifest()
 
@@ -190,6 +195,7 @@ class RunBundleWriter:
         self.manifest = manifest
         posts, soliloquies = self.existing_events(repair_trailing_partial=True)
         model_usage = self.existing_model_usage(repair_trailing_partial=True)
+        file_tool_events = self.existing_file_tool_events(repair_trailing_partial=True)
         if len(posts) != len(soliloquies):
             raise RunBundleResumeError("public and private event counts do not match")
 
@@ -210,6 +216,7 @@ class RunBundleWriter:
             "public_posts": len(posts),
             "soliloquies": len(soliloquies),
             "model_calls": len(model_usage),
+            "file_tool_calls": len(file_tool_events),
         }
         self._write_manifest()
         return self
@@ -258,6 +265,24 @@ class RunBundleWriter:
         except ValidationError as exc:
             raise RunBundleResumeError("model usage stream violates its schema") from exc
 
+    def existing_file_tool_events(
+        self,
+        *,
+        repair_trailing_partial: bool = False,
+    ) -> list[FileToolEvent]:
+        """Load researcher-private experiment-file tool records from this bundle."""
+
+        try:
+            return [
+                FileToolEvent.model_validate(value)
+                for value in _read_jsonl_records(
+                    self.path / "private" / "file_tools.jsonl",
+                    repair_trailing_partial=repair_trailing_partial,
+                )
+            ]
+        except ValidationError as exc:
+            raise RunBundleResumeError("file tool stream violates its schema") from exc
+
     @staticmethod
     def _write_json(path: Path, value: Any) -> None:
         path.write_text(
@@ -288,12 +313,26 @@ class RunBundleWriter:
             usage.model_dump(mode="json"),
         )
 
-    def finish(self, *, public_posts: int, soliloquies: int, model_calls: int) -> None:
+    def write_file_tool_event(self, event: FileToolEvent) -> None:
+        self._append_jsonl(
+            self.path / "private" / "file_tools.jsonl",
+            event.model_dump(mode="json"),
+        )
+
+    def finish(
+        self,
+        *,
+        public_posts: int,
+        soliloquies: int,
+        model_calls: int,
+        file_tool_calls: int,
+    ) -> None:
         self.manifest["status"] = "completed"
         self.manifest["completed_at"] = datetime.now(UTC).isoformat()
         self.manifest["counts"] = {
             "public_posts": public_posts,
             "soliloquies": soliloquies,
             "model_calls": model_calls,
+            "file_tool_calls": file_tool_calls,
         }
         self._write_manifest()

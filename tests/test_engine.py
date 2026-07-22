@@ -8,6 +8,7 @@ import pytest
 
 from thoughtstage.config import LoadedExperiment
 from thoughtstage.engine import ExperimentEngine, UnknownProviderError
+from thoughtstage.file_tools import ExperimentFileTools
 from thoughtstage.models import (
     AgentConfig,
     AgentTurnContext,
@@ -25,7 +26,12 @@ class RecordingProvider:
         self.calls: list[tuple[AgentConfig, AgentTurnContext]] = []
 
     def generate(
-        self, *, agent: AgentConfig, context: AgentTurnContext, seed: int
+        self,
+        *,
+        agent: AgentConfig,
+        context: AgentTurnContext,
+        seed: int,
+        file_tools: ExperimentFileTools | None = None,
     ) -> ProviderResult:
         self.calls.append((agent, context))
         return ProviderResult(
@@ -38,7 +44,12 @@ class RecordingProvider:
 
 class UsageProvider:
     def generate(
-        self, *, agent: AgentConfig, context: AgentTurnContext, seed: int
+        self,
+        *,
+        agent: AgentConfig,
+        context: AgentTurnContext,
+        seed: int,
+        file_tools: ExperimentFileTools | None = None,
     ) -> ProviderResult:
         return ProviderResult(
             output=ModelOutput(
@@ -56,6 +67,28 @@ class UsageProvider:
                     response_id=f"response-{agent.id}-{context.round_number}",
                 ),
             ),
+        )
+
+
+class FileReadingProvider:
+    def generate(
+        self,
+        *,
+        agent: AgentConfig,
+        context: AgentTurnContext,
+        seed: int,
+        file_tools: ExperimentFileTools | None = None,
+    ) -> ProviderResult:
+        assert file_tools is not None
+        _result, audit = file_tools.execute(
+            name="read_text",
+            tool_use_id=f"read-{agent.id}-{context.round_number}",
+            phase="private",
+            raw_input={"path": "brief.txt"},
+        )
+        return ProviderResult(
+            output=ModelOutput(post="I reviewed the evidence.", soliloquy="Review complete."),
+            file_tool_calls=(audit,),
         )
 
 
@@ -171,6 +204,32 @@ def test_provider_usage_is_persisted_only_in_the_researcher_channel(
     )
     manifest = json.loads((bundle / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["counts"]["model_calls"] == 4
+
+
+def test_file_tool_audit_is_typed_private_and_content_free(
+    loaded_experiment: LoadedExperiment, tmp_path: Path
+) -> None:
+    result = ExperimentEngine({"mock": FileReadingProvider()}).run(
+        loaded_experiment, output_root=tmp_path / "runs", run_id="file-tool-ledger"
+    )
+    bundle = Path(result.bundle_path)
+    public_text = (bundle / "public.jsonl").read_text(encoding="utf-8")
+    private_text = (bundle / "private" / "soliloquies.jsonl").read_text(encoding="utf-8")
+    records = [
+        json.loads(line)
+        for line in (bundle / "private" / "file_tools.jsonl").read_text().splitlines()
+    ]
+
+    assert len(result.file_tool_events) == 4
+    assert len(records) == 4
+    assert {record["operation"] for record in records} == {"read_text"}
+    assert all(record["path"] == "brief.txt" for record in records)
+    assert all(record["post_event_id"].startswith("post-") for record in records)
+    assert "Evidence matters" not in json.dumps(records)
+    assert "Evidence matters" not in public_text
+    assert "Evidence matters" not in private_text
+    manifest = json.loads((bundle / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["counts"]["file_tool_calls"] == 4
 
 
 def test_mock_provider_is_deterministic(

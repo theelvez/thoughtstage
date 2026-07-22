@@ -9,12 +9,12 @@ not merely a user-interface concern.
 2. **Experiment engine** constructs the eligible context for each turn and
    schedules agents using explicit simultaneous or sequential semantics.
 3. **Provider adapters** translate an `AgentTurnContext` into a Post and a
-   Soliloquy plus a separate provider-usage envelope. Provider/model and usage
-   metadata stay outside the context object.
+   Soliloquy plus separate usage and file-tool audit envelopes. Provider/model,
+   usage, and tool telemetry stay outside the context object.
 4. **Run-bundle writer** persists public and private streams separately and
    records the provenance needed to inspect or repeat a run.
-5. **Experiment-file MCP** provides bounded, audited, read-only access to files
-   under one declared experiment root.
+5. **Experiment-file tools and MCP** provide the same bounded, audited,
+   read-only operations under one declared experiment root.
 6. **Research API and dashboard** expose local researcher controls without
    changing what participating agents can observe.
 
@@ -28,10 +28,11 @@ The engine passes provider adapters an `AgentTurnContext` containing:
 - optionally, that agent's own prior soliloquies; and
 - names of readable experiment files.
 
-The type contains no field for another agent's soliloquy, provider, model,
-credential, or usage metadata. Provider binding metadata is written only to the
-researcher manifest; provider-reported token usage is written only to the private
-usage ledger.
+The context type contains no field for another agent's soliloquy, provider,
+model, credential, usage metadata, filesystem root, or callable. The engine
+passes a separate read-only capability to supporting providers. Provider binding
+metadata is written only to the researcher manifest; provider-reported token
+usage and content-free file-access audits are written only to private ledgers.
 
 ## Scheduling
 
@@ -64,7 +65,12 @@ AWS profile name. It uses an explicit two-call reflect-then-post protocol,
 adaptive SDK retries, and mandatory per-call output-token limits. Provider,
 model, Region, profile, and credential metadata remain outside model-visible
 content, while provider-reported usage is retained in the researcher-private
-usage stream.
+usage stream. When `files_dir` is declared, the private evidence-gathering phase
+can invoke `list_files`, `file_info`, `read_text`, and `search_text`. The public
+phase drafts from that same agent's completed soliloquy without callable tools.
+Inputs are strictly validated, traversal and symlinks remain forbidden, tool
+loops are bounded with a final tool-free completion fallback, and only hashes
+and access metadata are persisted in `private/file_tools.jsonl`.
 
 ## Interpreting a soliloquy
 

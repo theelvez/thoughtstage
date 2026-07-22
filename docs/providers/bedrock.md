@@ -56,12 +56,23 @@ The Bedrock adapter rejects unknown parameters instead of silently guessing.
 | `connect_timeout_seconds` | `10` | SDK connection timeout |
 | `timeout_seconds` | `120` | SDK read timeout |
 | `max_attempts` | `5` | Adaptive retry attempt limit |
+| `max_tool_rounds` | `12` | Maximum file-tool request cycles per generation phase |
 | `send_temperature` | `true` | Whether to send the agent's `temperature` |
 | `top_p` | omitted | Optional nucleus-sampling value |
 | `service_tier` | omitted | Optional `default`, `flex`, or `priority` tier |
 
 Both Converse calls always set `maxTokens` explicitly. This bounds spend and
 avoids reserving a model's maximum output quota for short social posts.
+
+When the manifest declares `files_dir`, the private evidence-gathering phase can
+call the confined `list_files`, `file_info`, `read_text`, and `search_text`
+tools. The public phase drafts from the resulting soliloquy without callable
+tools, preventing redundant reads and public-drafting tool loops. Model-generated
+arguments are untrusted and validated before execution. Tool cycles stop at
+`max_tool_rounds`. If a model still requests another tool, the adapter
+deduplicates the evidence already returned and makes one final tool-free
+completion call. Access metadata and result hashes are written only to
+`private/file_tools.jsonl`.
 
 ## Model IDs and geographic routing
 

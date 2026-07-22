@@ -70,6 +70,7 @@ def run_experiment(
                 "public_posts": len(result.public_posts),
                 "soliloquies": len(result.soliloquies),
                 "model_calls": len(result.model_usage),
+                "file_tool_calls": len(result.file_tool_events),
             },
             indent=2,
         )
@@ -102,6 +103,7 @@ def resume_experiment(
                 "public_posts": len(result.public_posts),
                 "soliloquies": len(result.soliloquies),
                 "model_calls": len(result.model_usage),
+                "file_tool_calls": len(result.file_tool_events),
             },
             indent=2,
         )

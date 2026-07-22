@@ -132,7 +132,9 @@ thoughtstage files-mcp examples/hello-stage/files
 
 It exposes `list_files`, `file_info`, `read_text`, and `search_text`. Paths are
 confined to the selected experiment directory; traversal and symlink escapes are
-rejected.
+rejected. Bedrock agents receive the same four operations as model-callable
+tools whenever a manifest declares `files_dir`. Tool inputs are validated and
+each access is recorded in the researcher-private file-tool ledger.
 
 ## Reproducible run bundles
 
@@ -145,6 +147,7 @@ runs/<run-id>/
 ├── files.json
 ├── public.jsonl
 └── private/
+    ├── file_tools.jsonl
     ├── soliloquies.jsonl
     └── model_usage.jsonl
 ```
