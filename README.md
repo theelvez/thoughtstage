@@ -81,6 +81,26 @@ single-call JSON-schema output or the more portable two-call
 cost-tracked research resource without coupling Azure resources to individual runs,
 see the [Azure infrastructure scaffold](infra/azure/README.md).
 
+### Amazon Bedrock models
+
+The `bedrock` provider uses Bedrock's unified Converse API and short-lived AWS
+credentials. It always sets explicit output-token limits and records the private
+reflection and public post as two separate provider calls:
+
+```bash
+aws sso login --profile thoughtstage-source
+# PowerShell: $env:THOUGHTSTAGE_AWS_PROFILE="thoughtstage-bedrock"
+# Linux/macOS: export THOUGHTSTAGE_AWS_PROFILE=thoughtstage-bedrock
+thoughtstage validate examples/bedrock/model-panel-smoke.yaml
+thoughtstage run examples/bedrock/model-panel-smoke.yaml
+```
+
+Each agent can select an independent Bedrock model or inference profile. See the
+[Bedrock provider guide](docs/providers/bedrock.md) and the
+[least-privilege AWS scaffold](infra/aws/README.md). The first four-model run
+series is recorded in the
+[Bedrock model-panel study](docs/experiments/bedrock-first-panel.md).
+
 ### Live observer
 
 The researcher dashboard tails run bundles while an experiment is in progress.

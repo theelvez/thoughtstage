@@ -20,6 +20,7 @@ from thoughtstage.models import (
 )
 from thoughtstage.providers.azure_foundry import AzureFoundryProvider
 from thoughtstage.providers.base import Provider
+from thoughtstage.providers.bedrock import BedrockProvider
 from thoughtstage.providers.mock import MockProvider
 from thoughtstage.reproducibility import RunBundleResumeError, RunBundleWriter
 
@@ -32,6 +33,7 @@ class ExperimentEngine:
     def __init__(self, providers: Mapping[str, Provider] | None = None) -> None:
         self.providers: dict[str, Provider] = {
             "azure_foundry": AzureFoundryProvider(),
+            "bedrock": BedrockProvider(),
             "mock": MockProvider(),
         }
         if providers:
@@ -194,6 +196,7 @@ class ExperimentEngine:
                     round_number=round_number,
                     system_prompt=config.system_prompt,
                     persona_prompt=agent.persona_prompt,
+                    private_briefing=agent.private_briefing,
                     public_feed=feed,
                     own_soliloquies=own_history,
                     available_files=available_files,

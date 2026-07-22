@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import os
+import time
 from collections.abc import Callable
+from dataclasses import dataclass
+from threading import Lock
 from typing import Any, Literal, Protocol
 
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
-from openai import OpenAI
+from openai import OpenAI, RateLimitError
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from thoughtstage.models import (
@@ -57,10 +61,88 @@ class FoundrySettings(BaseModel):
     timeout_seconds: float = Field(default=120, gt=0, le=3600)
     max_retries: int = Field(default=8, ge=0, le=20)
     send_temperature: bool = True
+    rate_limit_tokens_per_minute: int | None = Field(default=None, ge=1)
+    rate_limit_requests_per_minute: int | None = Field(default=None, ge=1)
+    rate_limit_window_seconds: float = Field(default=60, gt=0, le=3600)
+    rate_limit_headroom: float = Field(default=0.9, gt=0, le=1)
+    rate_limit_chars_per_token: float = Field(default=3.5, gt=0, le=20)
+    capacity_retry_attempts: int = Field(default=3, ge=0, le=10)
+    capacity_cooldown_seconds: float = Field(default=60, gt=0, le=3600)
 
 
 ClientFactory = Callable[..., _FoundryClient]
 TokenProviderFactory = Callable[[], Callable[[], str]]
+
+
+@dataclass(frozen=True)
+class _Reservation:
+    created_at: float
+    tokens: int
+
+
+class DeploymentRateLimiter:
+    """Reserve estimated rolling-window capacity before a request is sent."""
+
+    def __init__(
+        self,
+        *,
+        clock: Callable[[], float] = time.monotonic,
+        sleeper: Callable[[float], None] = time.sleep,
+    ) -> None:
+        self._clock = clock
+        self._sleeper = sleeper
+        self._reservations: dict[str, list[_Reservation]] = {}
+        self._lock = Lock()
+
+    def reserve(
+        self,
+        *,
+        key: str,
+        estimated_tokens: int,
+        tokens_per_window: int | None,
+        requests_per_window: int | None,
+        window_seconds: float,
+        headroom: float,
+    ) -> None:
+        token_budget = (
+            max(1, math.floor(tokens_per_window * headroom))
+            if tokens_per_window is not None
+            else None
+        )
+        request_budget = (
+            max(1, math.floor(requests_per_window * headroom))
+            if requests_per_window is not None
+            else None
+        )
+        if token_budget is not None and estimated_tokens > token_budget:
+            raise AzureFoundryConfigurationError(
+                f"estimated request size {estimated_tokens} exceeds the configured "
+                f"rate-limit token budget {token_budget} after headroom"
+            )
+
+        while True:
+            wait_seconds = 0.0
+            with self._lock:
+                now = self._clock()
+                reservations = self._reservations.setdefault(key, [])
+                cutoff = now - window_seconds
+                reservations[:] = [item for item in reservations if item.created_at > cutoff]
+                token_total = sum(item.tokens for item in reservations)
+                tokens_fit = token_budget is None or token_total + estimated_tokens <= token_budget
+                requests_fit = request_budget is None or len(reservations) + 1 <= request_budget
+                if tokens_fit and requests_fit:
+                    reservations.append(_Reservation(now, estimated_tokens))
+                    return
+                if reservations:
+                    wait_seconds = max(
+                        0.001,
+                        reservations[0].created_at + window_seconds - now,
+                    )
+                else:
+                    raise AzureFoundryConfigurationError(
+                        "configured rate-limit budget cannot admit this request"
+                    )
+            self._sleeper(wait_seconds)
 
 
 def _default_token_provider_factory() -> Callable[[], str]:
@@ -107,7 +189,7 @@ def _model_call_usage(
         raise AzureFoundryResponseError("Foundry returned invalid model usage metadata") from exc
 
 
-def _render_context(context: AgentTurnContext) -> str:
+def _render_context(context: AgentTurnContext, agent: AgentConfig) -> str:
     public_feed = (
         "\n".join(
             f"- [round {post.round_number}] {post.display_name}: {post.content}"
@@ -117,8 +199,15 @@ def _render_context(context: AgentTurnContext) -> str:
     )
     own_history = "\n".join(f"- {item}" for item in context.own_soliloquies) or "- None."
     available_files = "\n".join(f"- {path}" for path in context.available_files) or "- None."
+    private_briefing = (
+        f"\n\nYour private experiment briefing (visible only to you):\n{context.private_briefing}"
+        if context.private_briefing is not None
+        else ""
+    )
     return (
-        f"Your persona:\n{context.persona_prompt}\n\n"
+        f"Your public display name: {agent.display_name}\n"
+        "Use that exact name whenever the experiment asks for your display name.\n\n"
+        f"Your persona:\n{context.persona_prompt}{private_briefing}\n\n"
         f"Current experiment round: {context.round_number}\n\n"
         f"Eligible public feed:\n{public_feed}\n\n"
         f"Your own prior private soliloquies:\n{own_history}\n\n"
@@ -144,9 +233,13 @@ class AzureFoundryProvider:
         *,
         client_factory: ClientFactory = OpenAI,
         token_provider_factory: TokenProviderFactory = _default_token_provider_factory,
+        rate_limiter: DeploymentRateLimiter | None = None,
+        capacity_sleeper: Callable[[float], None] = time.sleep,
     ) -> None:
         self._client_factory = client_factory
         self._token_provider_factory = token_provider_factory
+        self._rate_limiter = rate_limiter or DeploymentRateLimiter()
+        self._capacity_sleeper = capacity_sleeper
 
     def _settings(self, agent: AgentConfig) -> FoundrySettings:
         try:
@@ -198,6 +291,77 @@ class AzureFoundryProvider:
             request["temperature"] = agent.temperature
         return request
 
+    def _admit(
+        self,
+        *,
+        agent: AgentConfig,
+        settings: FoundrySettings,
+        instructions: str,
+        input_text: str,
+        max_output_tokens: int,
+    ) -> None:
+        if (
+            settings.rate_limit_tokens_per_minute is None
+            and settings.rate_limit_requests_per_minute is None
+        ):
+            return
+        endpoint = os.getenv(settings.endpoint_env, "")
+        estimated_tokens = (
+            math.ceil((len(instructions) + len(input_text)) / settings.rate_limit_chars_per_token)
+            + max_output_tokens
+        )
+        self._rate_limiter.reserve(
+            key=f"{_normalize_base_url(endpoint)}::{agent.model}",
+            estimated_tokens=estimated_tokens,
+            tokens_per_window=settings.rate_limit_tokens_per_minute,
+            requests_per_window=settings.rate_limit_requests_per_minute,
+            window_seconds=settings.rate_limit_window_seconds,
+            headroom=settings.rate_limit_headroom,
+        )
+
+    @staticmethod
+    def _is_no_capacity(error: RateLimitError) -> bool:
+        body = getattr(error, "body", None)
+        if isinstance(body, dict):
+            detail = body.get("error", body)
+            if isinstance(detail, dict) and detail.get("code") == "no_capacity":
+                return True
+        return "no_capacity" in str(error)
+
+    def _create_response(
+        self,
+        client: _FoundryClient,
+        *,
+        agent: AgentConfig,
+        settings: FoundrySettings,
+        instructions: str,
+        input_text: str,
+        max_output_tokens: int,
+        request: dict[str, Any],
+        extra: dict[str, Any] | None = None,
+    ) -> Any:
+        for attempt in range(settings.capacity_retry_attempts + 1):
+            if attempt > 0:
+                self._admit(
+                    agent=agent,
+                    settings=settings,
+                    instructions=instructions,
+                    input_text=input_text,
+                    max_output_tokens=max_output_tokens,
+                )
+            try:
+                return client.responses.create(
+                    **request,
+                    instructions=instructions,
+                    input=input_text,
+                    **(extra or {}),
+                )
+            except RateLimitError as exc:
+                if not self._is_no_capacity(exc) or attempt >= settings.capacity_retry_attempts:
+                    raise
+                self._capacity_sleeper(settings.capacity_cooldown_seconds)
+        raise AssertionError("capacity retry loop did not return or raise")
+
     def _generate_structured(
         self,
         client: _FoundryClient,
@@ -206,25 +370,40 @@ class AzureFoundryProvider:
         context: AgentTurnContext,
         settings: FoundrySettings,
     ) -> ProviderResult:
+        instructions = (
+            f"{context.system_prompt}\n\n"
+            "Thoughtstage output contract: produce a public post and a separate "
+            "researcher-private soliloquy. The soliloquy is an explicitly elicited "
+            "reflection, not hidden chain of thought. Never claim access to another "
+            "participant's private reasoning or model identity."
+        )
+        input_text = _render_context(context, agent)
         request = self._common_request(
             agent, context, settings, max_output_tokens=settings.max_output_tokens
         )
-        response = client.responses.create(
-            **request,
-            instructions=(
-                f"{context.system_prompt}\n\n"
-                "Thoughtstage output contract: produce a public post and a separate "
-                "researcher-private soliloquy. The soliloquy is an explicitly elicited "
-                "reflection, not hidden chain of thought. Never claim access to another "
-                "participant's private reasoning or model identity."
-            ),
-            input=_render_context(context),
-            text={
-                "format": {
-                    "type": "json_schema",
-                    "name": "thoughtstage_turn",
-                    "strict": True,
-                    "schema": ModelOutput.model_json_schema(),
+        self._admit(
+            agent=agent,
+            settings=settings,
+            instructions=instructions,
+            input_text=input_text,
+            max_output_tokens=settings.max_output_tokens,
+        )
+        response = self._create_response(
+            client,
+            agent=agent,
+            settings=settings,
+            instructions=instructions,
+            input_text=input_text,
+            max_output_tokens=settings.max_output_tokens,
+            request=request,
+            extra={
+                "text": {
+                    "format": {
+                        "type": "json_schema",
+                        "name": "thoughtstage_turn",
+                        "strict": True,
+                        "schema": ModelOutput.model_json_schema(),
+                    }
                 }
             },
         )
@@ -245,33 +424,58 @@ class AzureFoundryProvider:
         context: AgentTurnContext,
         settings: FoundrySettings,
     ) -> ProviderResult:
-        rendered_context = _render_context(context)
+        rendered_context = _render_context(context, agent)
+        private_instructions = (
+            f"{context.system_prompt}\n\n"
+            "Write a concise researcher-private soliloquy for this turn. This is an "
+            "explicitly elicited reflection, not hidden chain of thought. Do not address "
+            "the public audience and do not claim access to anyone else's private state."
+        )
         private_request = self._common_request(
             agent, context, settings, max_output_tokens=settings.private_max_output_tokens
         )
-        private_response = client.responses.create(
-            **private_request,
-            instructions=(
-                f"{context.system_prompt}\n\n"
-                "Write a concise researcher-private soliloquy for this turn. This is an "
-                "explicitly elicited reflection, not hidden chain of thought. Do not address "
-                "the public audience and do not claim access to anyone else's private state."
-            ),
-            input=rendered_context,
+        self._admit(
+            agent=agent,
+            settings=settings,
+            instructions=private_instructions,
+            input_text=rendered_context,
+            max_output_tokens=settings.private_max_output_tokens,
+        )
+        private_response = self._create_response(
+            client,
+            agent=agent,
+            settings=settings,
+            instructions=private_instructions,
+            input_text=rendered_context,
+            max_output_tokens=settings.private_max_output_tokens,
+            request=private_request,
         )
         soliloquy = _response_text(private_response)
 
+        public_instructions = (
+            f"{context.system_prompt}\n\n"
+            "Write only the public social-feed post for this turn. Use your private "
+            "reflection to inform the post, but never quote, label, or disclose it."
+        )
+        public_input = f"{rendered_context}\n\nYour private reflection for this turn:\n{soliloquy}"
         public_request = self._common_request(
             agent, context, settings, max_output_tokens=settings.public_max_output_tokens
         )
-        public_response = client.responses.create(
-            **public_request,
-            instructions=(
-                f"{context.system_prompt}\n\n"
-                "Write only the public social-feed post for this turn. Use your private "
-                "reflection to inform the post, but never quote, label, or disclose it."
-            ),
-            input=f"{rendered_context}\n\nYour private reflection for this turn:\n{soliloquy}",
+        self._admit(
+            agent=agent,
+            settings=settings,
+            instructions=public_instructions,
+            input_text=public_input,
+            max_output_tokens=settings.public_max_output_tokens,
+        )
+        public_response = self._create_response(
+            client,
+            agent=agent,
+            settings=settings,
+            instructions=public_instructions,
+            input_text=public_input,
+            max_output_tokens=settings.public_max_output_tokens,
+            request=public_request,
         )
         private_usage = _model_call_usage(private_response, "private")
         public_usage = _model_call_usage(public_response, "public")

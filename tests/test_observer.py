@@ -26,7 +26,11 @@ def _make_live_bundle(root: Path, run_id: str = "live-run") -> Path:
             "status": "running",
             "created_at": "2026-07-21T12:00:00+00:00",
             "completed_at": None,
-            "experiment": {"id": "observer-test", "name": "Observer Test"},
+            "experiment": {
+                "id": "observer-test",
+                "name": "Observer Test",
+                "system_prompt": "Reach one evidence-backed decision.",
+            },
             "execution": {"rounds": 8, "schedule": "sequential"},
             "agents": [
                 {
@@ -60,6 +64,10 @@ def _make_live_bundle(root: Path, run_id: str = "live-run") -> Path:
     (bundle / "public.jsonl").write_text(json.dumps(post) + "\n", encoding="utf-8")
     (bundle / "private" / "soliloquies.jsonl").write_text(
         json.dumps(soliloquy) + "\n{partial", encoding="utf-8"
+    )
+    _write_json(
+        bundle / "private" / "agent_briefings.json",
+        {"atlas": "Privately advocate Product A for five points."},
     )
     usage = {
         "event_id": "usage-r0001-atlas-000001-call01",
@@ -111,6 +119,8 @@ def test_read_run_bundle_preserves_separate_streams(tmp_path: Path) -> None:
     assert run["model_usage"][0]["response_id"] == "response-1"
     assert run["usage_summary"]["totals"]["model_calls"] == 1
     assert run["usage_summary"]["by_model"]["azure_foundry:gpt-4o"]["total_tokens"] == 150
+    assert run["experiment"]["system_prompt"] == "Reach one evidence-backed decision."
+    assert run["private_briefings"] == {"atlas": "Privately advocate Product A for five points."}
 
 
 def test_run_id_cannot_traverse_outside_root(tmp_path: Path) -> None:

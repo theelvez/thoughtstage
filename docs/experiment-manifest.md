@@ -25,10 +25,19 @@ so misspellings cannot silently change an experimental condition.
 Every agent has an `id`, `display_name`, `persona_prompt`, `provider`, and `model`.
 `credential_env` refers to an environment-variable *name*, never a secret value.
 `temperature` and `parameters` capture provider inference controls.
+`private_briefing` is optional researcher-supplied experimental data delivered
+only to that agent. Agents without one receive no indication that private
+briefings exist.
 
 Provider/model configuration is available to the engine, adapter, researcher,
 and reproducibility manifest. It is not placed in any participating agent's
 context.
+
+Private briefing content is kept out of public and soliloquy event streams. Run
+bundles retain exact content in `private/agent_briefings.json` for researchers
+and store only per-agent hashes in the manifest input inventory. This boundary
+supports asymmetric incentives and hidden-information experiments without
+revealing one participant's condition to another.
 
 ## Shared-prompt guarantee
 

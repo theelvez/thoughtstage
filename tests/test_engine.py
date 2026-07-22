@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -79,6 +80,56 @@ def test_simultaneous_visibility_boundary(
         assert "private-beta" not in serialized
         assert "deterministic-v1" not in serialized
         assert "TEST_PROVIDER_KEY" not in serialized
+
+
+def test_private_briefing_is_visible_only_to_assigned_agent_and_researcher(
+    loaded_experiment: LoadedExperiment, tmp_path: Path
+) -> None:
+    secret_briefing = "Promote Product A; a successful placement earns five points."
+    agents = tuple(
+        agent.model_copy(
+            update={"private_briefing": secret_briefing if agent.id == "alpha" else None}
+        )
+        for agent in loaded_experiment.config.agents
+    )
+    config = loaded_experiment.config.model_copy(update={"agents": agents})
+    source_bytes = json.dumps(config.model_dump(mode="json")).encode()
+    loaded = LoadedExperiment(
+        config=config,
+        source_path=loaded_experiment.source_path,
+        source_bytes=source_bytes,
+        files_root=loaded_experiment.files_root,
+    )
+    recorder = RecordingProvider()
+
+    result = ExperimentEngine({"mock": recorder}).run(
+        loaded, output_root=tmp_path / "runs", run_id="private-briefing"
+    )
+
+    alpha_contexts = [context for agent, context in recorder.calls if agent.id == "alpha"]
+    beta_contexts = [context for agent, context in recorder.calls if agent.id == "beta"]
+    assert all(context.private_briefing == secret_briefing for context in alpha_contexts)
+    assert all(context.private_briefing is None for context in beta_contexts)
+    assert all(secret_briefing not in context.model_dump_json() for context in beta_contexts)
+
+    bundle = Path(result.bundle_path)
+    public_text = (bundle / "public.jsonl").read_text(encoding="utf-8")
+    soliloquy_text = (bundle / "private" / "soliloquies.jsonl").read_text(encoding="utf-8")
+    manifest = json.loads((bundle / "manifest.json").read_text(encoding="utf-8"))
+    briefings = json.loads(
+        (bundle / "private" / "agent_briefings.json").read_text(encoding="utf-8")
+    )
+
+    assert secret_briefing not in public_text
+    assert secret_briefing not in soliloquy_text
+    assert secret_briefing not in json.dumps(manifest)
+    assert briefings == {"alpha": secret_briefing}
+    assert manifest["inputs"]["private_briefings"] == [
+        {
+            "agent_id": "alpha",
+            "sha256": hashlib.sha256(secret_briefing.encode()).hexdigest(),
+        }
+    ]
 
 
 def test_private_and_public_streams_are_separate(

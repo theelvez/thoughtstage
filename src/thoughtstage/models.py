@@ -39,6 +39,7 @@ class AgentConfig(StrictModel):
     id: str = Field(pattern=r"^[a-z][a-z0-9_-]{1,63}$")
     display_name: str = Field(min_length=1, max_length=80)
     persona_prompt: str = Field(min_length=1)
+    private_briefing: str | None = Field(default=None, min_length=1)
     provider: str = Field(min_length=1)
     model: str = Field(min_length=1)
     credential_env: str | None = Field(default=None, pattern=r"^[A-Z][A-Z0-9_]*$")
@@ -95,6 +96,7 @@ class AgentTurnContext(StrictModel):
     round_number: int
     system_prompt: str
     persona_prompt: str
+    private_briefing: str | None = None
     public_feed: tuple[PublicPost, ...]
     own_soliloquies: tuple[str, ...] = ()
     available_files: tuple[str, ...] = ()

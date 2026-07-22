@@ -1,0 +1,140 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  Thoughtstage least-privilege role for Amazon Bedrock discovery and model
+  invocation.
+
+Parameters:
+  RoleSessionNamePattern:
+    Type: String
+    Default: thoughtstage-*
+    AllowedPattern: "^[A-Za-z0-9+=,.@_*?-]{2,64}$"
+    Description: >-
+      Required STS role-session name pattern for local Thoughtstage sessions.
+  IdentityCenterInstanceArn:
+    Type: String
+    AllowedPattern: "^arn:[^:]+:sso:::instance/ssoins-[A-Za-z0-9-]+$"
+    Description: ARN of the organization-level IAM Identity Center instance.
+  IdentityCenterPrincipalId:
+    Type: String
+    AllowedPattern: "^[A-Za-z0-9-]{1,64}$"
+    Description: Immutable Identity Center user ID receiving Thoughtstage access.
+
+Resources:
+  ThoughtstageBedrockRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-role"
+      Path: /thoughtstage/
+      Description: >-
+        Human-assumable research role limited to Bedrock model discovery and
+        inference for Thoughtstage.
+      MaxSessionDuration: 14400
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowCurrentAccount
+            Effect: Allow
+            Principal:
+              AWS: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:root"
+            Action: sts:AssumeRole
+            Condition:
+              StringLike:
+                sts:RoleSessionName: !Ref RoleSessionNamePattern
+      Tags:
+        - Key: project
+          Value: thoughtstage
+        - Key: environment
+          Value: research
+        - Key: managed-by
+          Value: cloudformation
+        - Key: purpose
+          Value: bedrock-model-invocation
+
+  ThoughtstageBedrockPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: >-
+        Bedrock model discovery and inference permissions for Thoughtstage.
+      Roles:
+        - !Ref ThoughtstageBedrockRole
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DiscoverBedrockCatalog
+            Effect: Allow
+            Action:
+              - bedrock:GetFoundationModelAvailability
+              - bedrock:ListFoundationModels
+              - bedrock:ListInferenceProfiles
+            Resource: "*"
+          - Sid: InspectFoundationModels
+            Effect: Allow
+            Action: bedrock:GetFoundationModel
+            Resource: !Sub "arn:${AWS::Partition}:bedrock:*::foundation-model/*"
+          - Sid: InspectInferenceProfiles
+            Effect: Allow
+            Action: bedrock:GetInferenceProfile
+            Resource:
+              - !Sub >-
+                arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/*
+              - !Sub >-
+                arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:application-inference-profile/*
+          - Sid: InvokeModels
+            Effect: Allow
+            Action:
+              - bedrock:InvokeModel
+              - bedrock:InvokeModelWithResponseStream
+            Resource:
+              - !Sub "arn:${AWS::Partition}:bedrock:*::foundation-model/*"
+              - !Sub >-
+                arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/*
+              - !Sub >-
+                arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:application-inference-profile/*
+
+  ThoughtstageIdentityCenterPermissionSet:
+    Type: AWS::SSO::PermissionSet
+    Properties:
+      InstanceArn: !Ref IdentityCenterInstanceArn
+      Name: ThoughtstageBedrockEntry
+      Description: >-
+        Allows an Identity Center developer to enter the least-privilege
+        Thoughtstage Bedrock role.
+      SessionDuration: PT4H
+      InlinePolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AssumeThoughtstageBedrockRole
+            Effect: Allow
+            Action: sts:AssumeRole
+            Resource: !GetAtt ThoughtstageBedrockRole.Arn
+      Tags:
+        - Key: project
+          Value: thoughtstage
+        - Key: environment
+          Value: research
+        - Key: managed-by
+          Value: cloudformation
+
+  ThoughtstageIdentityCenterAssignment:
+    Type: AWS::SSO::Assignment
+    Properties:
+      InstanceArn: !Ref IdentityCenterInstanceArn
+      PermissionSetArn: !GetAtt ThoughtstageIdentityCenterPermissionSet.PermissionSetArn
+      PrincipalId: !Ref IdentityCenterPrincipalId
+      PrincipalType: USER
+      TargetId: !Ref AWS::AccountId
+      TargetType: AWS_ACCOUNT
+
+Outputs:
+  RoleArn:
+    Description: ARN for the local Thoughtstage assume-role profile.
+    Value: !GetAtt ThoughtstageBedrockRole.Arn
+  RoleName:
+    Description: Name of the least-privilege Thoughtstage Bedrock role.
+    Value: !Ref ThoughtstageBedrockRole
+  AwsRegion:
+    Description: Default AWS Region encoded in the inference-profile resources.
+    Value: !Ref AWS::Region
+  PermissionSetArn:
+    Description: ARN of the Identity Center entry permission set.
+    Value: !GetAtt ThoughtstageIdentityCenterPermissionSet.PermissionSetArn
