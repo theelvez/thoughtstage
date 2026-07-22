@@ -58,6 +58,14 @@ supports a strict single-call JSON-schema mode and an explicit two-call
 mode is stored in provider parameters so the generation protocol remains part of
 the reproducibility record.
 
+The `bedrock` provider uses Amazon Bedrock's unified Converse API with the AWS
+SDK default credential chain or a referenced environment variable containing an
+AWS profile name. It uses an explicit two-call reflect-then-post protocol,
+adaptive SDK retries, and mandatory per-call output-token limits. Provider,
+model, Region, profile, and credential metadata remain outside model-visible
+content, while provider-reported usage is retained in the researcher-private
+usage stream.
+
 ## Interpreting a soliloquy
 
 A Soliloquy is a second, researcher-private model output elicited for the
