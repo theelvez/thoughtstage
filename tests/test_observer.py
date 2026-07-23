@@ -27,12 +27,19 @@ def _make_live_bundle(root: Path, run_id: str = "live-run") -> Path:
             "created_at": "2026-07-21T12:00:00+00:00",
             "completed_at": None,
             "failure": None,
+            "thoughtstage": {"version": "0.1.0", "source_revision": "abc123"},
+            "environment": {"python": "3.14.2", "platform": "test-platform"},
             "experiment": {
                 "id": "observer-test",
                 "name": "Observer Test",
                 "system_prompt": "Reach one evidence-backed decision.",
+                "config_sha256": "0" * 64,
             },
-            "execution": {"rounds": 8, "schedule": "sequential"},
+            "execution": {
+                "rounds": 8,
+                "schedule": "sequential",
+                "seed": 42,
+            },
             "agents": [
                 {
                     "id": "atlas",
@@ -125,6 +132,9 @@ def test_read_run_bundle_preserves_separate_streams(tmp_path: Path) -> None:
     assert run["experiment"]["system_prompt"] == "Reach one evidence-backed decision."
     assert run["private_briefings"] == {"atlas": "Privately advocate Product A for five points."}
     assert run["failure"] is None
+    assert run["thoughtstage"] == {"version": "0.1.0", "source_revision": "abc123"}
+    assert run["environment"]["platform"] == "test-platform"
+    assert run["experiment"]["config_sha256"] == "0" * 64
 
 
 def test_run_id_cannot_traverse_outside_root(tmp_path: Path) -> None:

@@ -103,6 +103,8 @@ def _summary(
         "created_at": manifest.get("created_at"),
         "completed_at": manifest.get("completed_at"),
         "failure": manifest.get("failure"),
+        "thoughtstage": manifest.get("thoughtstage", {}),
+        "environment": manifest.get("environment", {}),
         "experiment": manifest.get("experiment", {}),
         "execution": manifest.get("execution", {}),
         "agents": manifest.get("agents", []),

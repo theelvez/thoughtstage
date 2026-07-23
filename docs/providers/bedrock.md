@@ -44,6 +44,31 @@ parameters:
 If `credential_env` is omitted, boto3 uses its normal default credential chain.
 Never place access keys, session tokens, or credential values in a manifest.
 
+### Containerized dashboard and experiment builder
+
+A login on the host is not automatically visible inside Docker or Podman. Use
+the Bedrock Compose override to expose only a profile name in the environment
+and mount the host AWS configuration read-only:
+
+```powershell
+aws sso login --profile thoughtstage-source
+$env:THOUGHTSTAGE_AWS_PROFILE = "thoughtstage-bedrock"
+$env:THOUGHTSTAGE_AWS_CONFIG_DIR = Join-Path $HOME ".aws"
+docker compose -f compose.yaml -f compose.bedrock.yaml up --build
+```
+
+```bash
+aws sso login --profile thoughtstage-source
+export THOUGHTSTAGE_AWS_PROFILE=thoughtstage-bedrock
+export THOUGHTSTAGE_AWS_CONFIG_DIR="$HOME/.aws"
+docker compose -f compose.yaml -f compose.bedrock.yaml up --build
+```
+
+The mount is intentionally read-only and is never copied into the container
+image. Renew an expired SSO session on the host. Prefer a dedicated AWS
+configuration directory containing only least-privilege research profiles,
+because the container can read every profile in the mounted directory.
+
 ## Provider parameters
 
 The Bedrock adapter rejects unknown parameters instead of silently guessing.

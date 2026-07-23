@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import "./live-observer.css";
+import RunSummaryDialog from "./RunSummaryDialog";
 
 type Agent = {
   id: string;
@@ -22,8 +23,21 @@ type RunSummary = {
   created_at: string | null;
   completed_at: string | null;
   failure?: { type?: string; message?: string } | null;
-  experiment: { id?: string; name?: string; system_prompt?: string };
-  execution: { rounds?: number; schedule?: string };
+  thoughtstage?: { version?: string; source_revision?: string | null };
+  experiment: {
+    id?: string;
+    name?: string;
+    system_prompt?: string;
+    config_sha256?: string;
+  };
+  execution: {
+    rounds?: number;
+    schedule?: string;
+    turn_order?: string;
+    private_memory?: string;
+    seed?: number;
+    scheduled_stimuli?: number;
+  };
   agents: Agent[];
   counts: Counts;
 };
@@ -67,8 +81,15 @@ type UsageSummary = {
   totals: {
     model_calls: number;
     input_tokens: number;
+    cached_input_tokens?: number;
     output_tokens: number;
+    reasoning_tokens?: number;
+    total_tokens?: number;
   };
+  by_agent?: Record<string, {
+    model_calls?: number;
+    total_tokens?: number;
+  }>;
 };
 
 type RunDetail = RunSummary & {
@@ -187,6 +208,7 @@ function LiveObserver() {
   const [followLive, setFollowLive] = useState(true);
   const [promptExpanded, setPromptExpanded] = useState(false);
   const [briefingAgentId, setBriefingAgentId] = useState<string | null>(null);
+  const [summaryOpen, setSummaryOpen] = useState(false);
   const feedEnd = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -252,6 +274,7 @@ function LiveObserver() {
   useEffect(() => {
     setPromptExpanded(false);
     setBriefingAgentId(null);
+    setSummaryOpen(false);
   }, [selectedRunId]);
 
   useEffect(() => {
@@ -342,6 +365,9 @@ function LiveObserver() {
         </div>
 
         <div className="observer-header-actions">
+          {detail?.status === "completed" && (
+            <button className="results-summary-button" type="button" onClick={() => setSummaryOpen(true)}>Experiment results summary</button>
+          )}
           <a className="builder-launch" href="/?view=builder">+ New experiment</a>
           <div className={`connection-state ${connected ? "connected" : "disconnected"}`}>
             <span aria-hidden="true" />
@@ -497,6 +523,10 @@ function LiveObserver() {
           </div>
         </aside>
       </div>
+
+      {summaryOpen && detail && (
+        <RunSummaryDialog detail={detail} onClose={() => setSummaryOpen(false)} />
+      )}
 
       {briefingAgent && briefingContent && (
         <div

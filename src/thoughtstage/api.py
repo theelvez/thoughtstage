@@ -29,6 +29,10 @@ from thoughtstage.observer import (
     list_run_bundles,
     read_run_bundle,
 )
+from thoughtstage.participant_roster import (
+    ParticipantRosterRequest,
+    generate_participant_roster,
+)
 
 app = FastAPI(
     title="Thoughtstage",
@@ -57,6 +61,13 @@ def design_contract() -> dict:
         "model_identity": "provider and model metadata are never placed in agent context",
         "default_private_memory": "none",
     }
+
+
+@app.post("/api/participant-rosters")
+def participant_roster(request: ParticipantRosterRequest) -> dict:
+    """Suggest seeded display names without writing experiment data."""
+
+    return generate_participant_roster(request).model_dump(mode="json")
 
 
 def _experiments_root() -> Path:

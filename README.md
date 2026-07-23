@@ -109,6 +109,30 @@ thoughtstage validate examples/bedrock/model-panel-smoke.yaml
 thoughtstage run examples/bedrock/model-panel-smoke.yaml
 ```
 
+To use the no-code experiment builder with Bedrock in Docker or Podman, pass
+the short-lived host SSO profile into the API container through the Bedrock
+Compose override. The host AWS directory is mounted read-only; no credential
+value enters the image, manifest, environment, log, or run bundle.
+
+```powershell
+aws sso login --profile thoughtstage-source
+$env:THOUGHTSTAGE_AWS_PROFILE = "thoughtstage-bedrock"
+$env:THOUGHTSTAGE_AWS_CONFIG_DIR = Join-Path $HOME ".aws"
+docker compose -f compose.yaml -f compose.bedrock.yaml up --build
+```
+
+```bash
+aws sso login --profile thoughtstage-source
+export THOUGHTSTAGE_AWS_PROFILE=thoughtstage-bedrock
+export THOUGHTSTAGE_AWS_CONFIG_DIR="$HOME/.aws"
+docker compose -f compose.yaml -f compose.bedrock.yaml up --build
+```
+
+Run the SSO login on the host again when the cached session expires. Use a
+dedicated, least-privilege profile such as the one created by the AWS scaffold;
+the API can read every profile present in the mounted directory even though
+Thoughtstage selects only the profile named by `THOUGHTSTAGE_AWS_PROFILE`.
+
 Each agent can select an independent Bedrock model or inference profile. See the
 [Bedrock provider guide](docs/providers/bedrock.md) and the
 [least-privilege AWS scaffold](infra/aws/README.md). The first four-model run

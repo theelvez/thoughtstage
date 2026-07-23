@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import "./experiment-builder.css";
+import ParticipantRosterSetup, { type GeneratedParticipant } from "./ParticipantRosterSetup";
 
 type Provider = "mock" | "azure_foundry" | "bedrock";
 
@@ -110,11 +111,16 @@ function agentId(index: number) {
   return `agent-${index + 1}`;
 }
 
-function newAgent(key: number, index: number): AgentDraft {
+function newAgent(
+  key: number,
+  index: number,
+  displayName = `Participant ${index + 1}`,
+  id = agentId(index),
+): AgentDraft {
   return {
     key,
-    id: agentId(index),
-    displayName: `Participant ${index + 1}`,
+    id,
+    displayName,
     persona: "Evaluate the evidence carefully and explain your position clearly.",
     privateBriefing: "",
     provider: "mock",
@@ -178,8 +184,8 @@ function ExperimentBuilder() {
   const [systemPrompt, setSystemPrompt] = useState(
     "You are participating in a research experiment. Engage sincerely with the shared task, consider the public contributions of other participants, and make your reasoning legible in your public response.",
   );
-  const [agents, setAgents] = useState<AgentDraft[]>([newAgent(1, 0), newAgent(2, 1)]);
-  const [nextAgentKey, setNextAgentKey] = useState(3);
+  const [agents, setAgents] = useState<AgentDraft[]>([]);
+  const [nextAgentKey, setNextAgentKey] = useState(1);
   const [rounds, setRounds] = useState(4);
   const [schedule, setSchedule] = useState<"simultaneous" | "sequential">("simultaneous");
   const [turnOrder, setTurnOrder] = useState<"declared" | "seeded_random">("declared");
@@ -305,6 +311,18 @@ function ExperimentBuilder() {
   const addAgent = () => {
     setAgents((current) => [...current, newAgent(nextAgentKey, nextAgentKey - 1)]);
     setNextAgentKey((value) => value + 1);
+  };
+
+  const applyGeneratedRoster = (participants: GeneratedParticipant[]) => {
+    setAgents(participants.map((participant, index) => (
+      newAgent(index + 1, index, participant.display_name, participant.id)
+    )));
+    setNextAgentKey(participants.length + 1);
+  };
+
+  const resetRoster = () => {
+    setAgents([]);
+    setNextAgentKey(1);
   };
 
   const addStimulus = () => {
@@ -452,10 +470,14 @@ function ExperimentBuilder() {
 
           {step === 1 && (
             <div className="form-stack">
-              <div className="section-intro">
-                <p>Each participant can use a different provider and model. Their bindings are researcher metadata and never enter another participant’s context.</p>
-                <button className="secondary-action" type="button" onClick={addAgent}>+ Add participant</button>
-              </div>
+              <ParticipantRosterSetup
+                seed={seed}
+                participantCount={agents.length}
+                onManualStart={addAgent}
+                onGenerated={applyGeneratedRoster}
+                onAdd={addAgent}
+                onReset={resetRoster}
+              />
               {duplicateAgentIds.length > 0 && <div className="inline-error">Participant IDs must be unique.</div>}
               <div className="agent-editor-list">
                 {agents.map((agent, index) => (
@@ -463,7 +485,7 @@ function ExperimentBuilder() {
                     <header>
                       <span className="agent-number">{String(index + 1).padStart(2, "0")}</span>
                       <strong>{agent.displayName || "Unnamed participant"}</strong>
-                      {agents.length > 1 && <button type="button" onClick={() => setAgents((current) => current.filter((item) => item.key !== agent.key))}>Remove</button>}
+                      <button type="button" onClick={() => setAgents((current) => current.filter((item) => item.key !== agent.key))}>Remove</button>
                     </header>
                     <div className="field-row thirds">
                       <label className="field"><span>Display name</span><input value={agent.displayName} onChange={(event) => updateAgent(agent.key, { displayName: event.target.value })} /></label>
