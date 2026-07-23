@@ -58,15 +58,22 @@ python -m pip install -e ".[dev]"
 
 thoughtstage validate examples/hello-stage/experiment.yaml
 thoughtstage run examples/hello-stage/experiment.yaml
+# Deterministic researcher-authored events need no model key:
+thoughtstage run examples/hello-stage/scheduled-stimuli.yaml
 pytest
 ```
 
 ### Microsoft Foundry models
 
 The `azure_foundry` provider uses the GA OpenAI/v1 Responses API. It supports
-Microsoft Entra ID by default, keeping credentials out of experiment manifests:
+Microsoft Entra ID by default, keeping credentials out of experiment manifests.
+Run these commands from the same host-side Python environment in which
+`thoughtstage` is installed; that lets `DefaultAzureCredential` reuse the Azure
+CLI login:
 
 ```bash
+# Activate the environment created in "Local Python" above first.
+# Linux/macOS: source .venv/bin/activate
 az login
 # PowerShell: $env:AZURE_FOUNDRY_ENDPOINT="https://<resource>.services.ai.azure.com"
 # Linux/macOS: export AZURE_FOUNDRY_ENDPOINT="https://<resource>.services.ai.azure.com"
@@ -74,12 +81,84 @@ thoughtstage validate examples/azure-foundry/experiment.yaml
 thoughtstage run examples/azure-foundry/experiment.yaml
 ```
 
+An `az login` performed on the host is not automatically available inside a
+Docker or Podman container, and host environment variables are not inherited
+unless explicitly passed. For local Entra development, prefer the host-side
+Python workflow above. Container deployments should provide their own workload
+identity, service-principal environment, or environment-referenced API key;
+never bake credentials into an image or experiment manifest.
+
 Each agent can name a different Foundry deployment and can select either strict
 single-call JSON-schema output or the more portable two-call
 `reflect_then_post` protocol. See
 [the Foundry provider guide](docs/providers/azure-foundry.md). To create a dedicated
 cost-tracked research resource without coupling Azure resources to individual runs,
 see the [Azure infrastructure scaffold](infra/azure/README.md).
+
+### Amazon Bedrock models
+
+The `bedrock` provider uses Bedrock's unified Converse API and short-lived AWS
+credentials. It always sets explicit output-token limits and records the private
+reflection and public post as two separate provider calls:
+
+```bash
+aws sso login --profile thoughtstage-source
+# PowerShell: $env:THOUGHTSTAGE_AWS_PROFILE="thoughtstage-bedrock"
+# Linux/macOS: export THOUGHTSTAGE_AWS_PROFILE=thoughtstage-bedrock
+thoughtstage validate examples/bedrock/model-panel-smoke.yaml
+thoughtstage run examples/bedrock/model-panel-smoke.yaml
+```
+
+To use the no-code experiment builder with Bedrock in Docker or Podman, pass
+the short-lived host SSO profile into the API container through the Bedrock
+Compose override. The host AWS directory is mounted read-only; no credential
+value enters the image, manifest, environment, log, or run bundle.
+
+```powershell
+aws sso login --profile thoughtstage-source
+$env:THOUGHTSTAGE_AWS_PROFILE = "thoughtstage-bedrock"
+$env:THOUGHTSTAGE_AWS_CONFIG_DIR = Join-Path $HOME ".aws"
+docker compose -f compose.yaml -f compose.bedrock.yaml up --build
+```
+
+```bash
+aws sso login --profile thoughtstage-source
+export THOUGHTSTAGE_AWS_PROFILE=thoughtstage-bedrock
+export THOUGHTSTAGE_AWS_CONFIG_DIR="$HOME/.aws"
+docker compose -f compose.yaml -f compose.bedrock.yaml up --build
+```
+
+Run the SSO login on the host again when the cached session expires. Use a
+dedicated, least-privilege profile such as the one created by the AWS scaffold;
+the API can read every profile present in the mounted directory even though
+Thoughtstage selects only the profile named by `THOUGHTSTAGE_AWS_PROFILE`.
+
+Each agent can select an independent Bedrock model or inference profile. See the
+[Bedrock provider guide](docs/providers/bedrock.md) and the
+[least-privilege AWS scaffold](infra/aws/README.md). The first four-model run
+series is recorded in the
+[Bedrock model-panel study](docs/experiments/bedrock-first-panel.md).
+
+### Researcher experiment builder
+
+Open <http://127.0.0.1:5173/?view=builder> while the local API and dashboard
+are running, or use `/?view=builder` on the container dashboard. The guided
+workflow collects the shared prompt, independent agent/model bindings, private
+agent briefings, schedule, researcher interventions, and UTF-8 experiment files.
+The model field offers provider-specific, known-working choices while remaining
+editable for account-specific Foundry deployments and Bedrock inference profiles.
+It previews the validated YAML before atomically creating
+`experiments/<experiment-id>/experiment.yaml` and its confined `files/`
+directory. Choose **Create, validate & launch** to check provider readiness,
+start a uniquely identified run, and move directly to that run in the live
+observer. A failed provider call leaves a visible, terminal failed run instead
+of an indefinitely running bundle. Credential values are never accepted; the
+builder records and checks optional environment-variable names only.
+
+The container configuration bind-mounts `experiments/` so researcher-created
+studies survive image replacement. Generated studies are normal Thoughtstage
+manifests and can be validated, run, reviewed, and committed like handwritten
+experiments.
 
 ### Live observer
 
@@ -92,8 +171,22 @@ pnpm --dir web dev
 ```
 
 Open <http://127.0.0.1:5173>, then start an experiment normally. Public posts
-appear in the conversation feed as they are recorded; each paired soliloquy can
-be opened independently in the researcher-only backstage view.
+and declared researcher stimuli appear in sequence in the conversation feed;
+each agent post's paired soliloquy can be opened independently in the
+researcher-only backstage view. Stimuli are visibly marked and never receive a
+private reflection.
+
+Completed runs expose a **Research workbench** beside the results summary. It
+keeps six post-experiment workflows together: an evidence-backed integrity
+check, a self-verifying reproducibility export, controlled one-variable clones,
+side-by-side run comparison, researcher-private bookmarks and annotations, and
+an explicitly heuristic consensus/stance timeline. Star buttons on public posts,
+stimuli, and opened soliloquies create annotations in
+`private/annotations.json`; annotation content never enters the public stream or
+participant context. Clone lineage is carried into the generated experiment and
+every resulting run bundle. The timeline uses only explicit signals in public
+posts and reports coverage and extraction confidence instead of imputing hidden
+beliefs.
 
 If a provider interruption leaves a valid partial bundle, resume only its
 missing turns instead of repeating successful calls:
@@ -112,7 +205,9 @@ thoughtstage files-mcp examples/hello-stage/files
 
 It exposes `list_files`, `file_info`, `read_text`, and `search_text`. Paths are
 confined to the selected experiment directory; traversal and symlink escapes are
-rejected.
+rejected. Bedrock agents receive the same four operations as model-callable
+tools whenever a manifest declares `files_dir`. Tool inputs are validated and
+each access is recorded in the researcher-private file-tool ledger.
 
 ## Reproducible run bundles
 
@@ -123,8 +218,16 @@ runs/<run-id>/
 ├── manifest.json
 ├── experiment.yaml
 ├── files.json
+├── lineage.json                 # controlled clones only
+├── inputs/
+│   └── files/                   # exact declared input snapshots
 ├── public.jsonl
+├── public/
+│   └── stimuli.jsonl
 └── private/
+    ├── agent_briefings.json
+    ├── annotations.json         # when a researcher annotates the run
+    ├── file_tools.jsonl
     ├── soliloquies.jsonl
     └── model_usage.jsonl
 ```
@@ -134,6 +237,19 @@ revision, scheduling semantics, seed, provider/model identifiers, inference
 parameters, and credential *references*. Secret values are never copied. When a
 provider reports token usage, successful calls are written only to the private
 ledger and can be summarized with `thoughtstage usage runs/<run-id>`.
+
+Verify or export a completed bundle from the command line with:
+
+```bash
+thoughtstage integrity runs/<run-id>
+thoughtstage export-bundle runs/<run-id> -o <run-id>.zip
+```
+
+The exporter refuses incomplete or invalid runs. Its deterministic ZIP contains
+the public and researcher-private streams, exact file snapshots, software and
+lineage metadata, an integrity report, and a checksum index. Treat it as
+researcher-private unless its private inputs and outputs have been reviewed for
+publication.
 
 See [the architecture](docs/architecture.md), [the experiment manifest](docs/experiment-manifest.md),
 and [the reproducibility contract](docs/reproducibility.md).

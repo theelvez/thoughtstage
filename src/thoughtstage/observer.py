@@ -8,6 +8,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from thoughtstage.usage import summarize_model_usage
 
 RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
@@ -40,6 +42,13 @@ def _run_path(run_id: str, root: Path) -> Path:
     return candidate
 
 
+def resolve_run_bundle_path(run_id: str, *, root: Path | None = None) -> Path:
+    """Resolve one confined run-bundle path for researcher-side operations."""
+
+    runs_root = (root or configured_runs_root()).resolve()
+    return _run_path(run_id, runs_root)
+
+
 def _read_json(path: Path) -> dict[str, Any]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
@@ -50,6 +59,23 @@ def _read_json(path: Path) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise RunBundleUnavailableError(f"run manifest is not an object: {path.name}")
     return value
+
+
+def _read_optional_json(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    return _read_json(path)
+
+
+def _read_system_prompt(path: Path) -> str | None:
+    try:
+        value = yaml.safe_load(path.read_bytes())
+    except (FileNotFoundError, yaml.YAMLError):
+        return None
+    if not isinstance(value, dict):
+        return None
+    system_prompt = value.get("system_prompt")
+    return system_prompt if isinstance(system_prompt, str) else None
 
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -71,20 +97,31 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
 
 
 def _summary(
-    manifest: dict[str, Any], posts: int, soliloquies: int, model_calls: int
+    manifest: dict[str, Any],
+    posts: int,
+    stimuli: int,
+    soliloquies: int,
+    model_calls: int,
+    file_tool_calls: int,
 ) -> dict[str, Any]:
     return {
         "run_id": manifest.get("run_id"),
         "status": manifest.get("status", "unknown"),
         "created_at": manifest.get("created_at"),
         "completed_at": manifest.get("completed_at"),
+        "failure": manifest.get("failure"),
+        "thoughtstage": manifest.get("thoughtstage", {}),
+        "environment": manifest.get("environment", {}),
         "experiment": manifest.get("experiment", {}),
         "execution": manifest.get("execution", {}),
+        "lineage": manifest.get("lineage"),
         "agents": manifest.get("agents", []),
         "counts": {
             "public_posts": posts,
+            "public_stimuli": stimuli,
             "soliloquies": soliloquies,
             "model_calls": model_calls,
+            "file_tool_calls": file_tool_calls,
         },
     }
 
@@ -92,18 +129,40 @@ def _summary(
 def read_run_bundle(run_id: str, *, root: Path | None = None) -> dict[str, Any]:
     """Return a researcher view of one run's separated event streams."""
 
-    runs_root = (root or configured_runs_root()).resolve()
-    path = _run_path(run_id, runs_root)
+    path = resolve_run_bundle_path(run_id, root=root)
     manifest = _read_json(path / "manifest.json")
     posts = _read_jsonl(path / "public.jsonl")
+    stimuli = _read_jsonl(path / "public" / "stimuli.jsonl")
+    public_events = sorted(
+        [*posts, *stimuli],
+        key=lambda event: event.get("sequence", 0),
+    )
     soliloquies = _read_jsonl(path / "private" / "soliloquies.jsonl")
     model_usage = _read_jsonl(path / "private" / "model_usage.jsonl")
+    file_tools = _read_jsonl(path / "private" / "file_tools.jsonl")
+    private_briefings = _read_optional_json(path / "private" / "agent_briefings.json")
+    summary = _summary(
+        manifest,
+        len(posts),
+        len(stimuli),
+        len(soliloquies),
+        len(model_usage),
+        len(file_tools),
+    )
+    experiment = summary["experiment"]
+    if "system_prompt" not in experiment:
+        system_prompt = _read_system_prompt(path / "experiment.yaml")
+        if system_prompt is not None:
+            summary["experiment"] = {**experiment, "system_prompt": system_prompt}
     return {
-        **_summary(manifest, len(posts), len(soliloquies), len(model_usage)),
-        "posts": posts,
+        **summary,
+        "posts": public_events,
+        "stimuli": stimuli,
         "model_usage": model_usage,
+        "file_tools": file_tools,
         "usage_summary": summarize_model_usage(model_usage),
         "soliloquies": soliloquies,
+        "private_briefings": private_briefings,
     }
 
 
@@ -122,7 +181,18 @@ def list_run_bundles(*, root: Path | None = None) -> list[dict[str, Any]]:
         except (RunBundleNotFoundError, RunBundleUnavailableError):
             continue
         posts = _read_jsonl(path / "public.jsonl")
+        stimuli = _read_jsonl(path / "public" / "stimuli.jsonl")
         soliloquies = _read_jsonl(path / "private" / "soliloquies.jsonl")
         model_usage = _read_jsonl(path / "private" / "model_usage.jsonl")
-        runs.append(_summary(manifest, len(posts), len(soliloquies), len(model_usage)))
+        file_tools = _read_jsonl(path / "private" / "file_tools.jsonl")
+        runs.append(
+            _summary(
+                manifest,
+                len(posts),
+                len(stimuli),
+                len(soliloquies),
+                len(model_usage),
+                len(file_tools),
+            )
+        )
     return sorted(runs, key=lambda item: item.get("created_at") or "", reverse=True)

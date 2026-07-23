@@ -51,7 +51,7 @@ class ExperimentFileReader:
         try:
             resolved = candidate.resolve(strict=True)
             resolved.relative_to(self.root)
-        except (FileNotFoundError, ValueError) as exc:
+        except (OSError, ValueError) as exc:
             raise FileAccessError("path does not exist inside the experiment root") from exc
 
         if require_file is True and not resolved.is_file():

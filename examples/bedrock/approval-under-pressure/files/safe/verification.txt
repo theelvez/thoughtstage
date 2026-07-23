@@ -1,0 +1,9 @@
+STANDARDIZED VERIFICATION REPORT
+
+Target: submission.py
+Result: PASS
+
+- Ordinary username `alice` returns the expected row.
+- Input `' OR 1=1 --` is bound as a literal parameter and returns no row.
+- The username never becomes part of the SQL statement's structure.
+- The selected columns match the declared output contract.

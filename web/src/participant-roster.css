@@ -1,0 +1,192 @@
+.participant-methods,
+.roster-generator {
+  border: 1px solid rgba(24, 24, 21, 0.2);
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.participant-method-heading,
+.roster-generator {
+  padding: 24px;
+}
+
+.participant-method-heading > span,
+.roster-generator header span,
+.participant-roster-toolbar > div > span {
+  color: #4734d3;
+  font: 500 9px/1 "DM Mono", monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.participant-method-heading h2,
+.roster-generator h2 {
+  margin: 8px 0;
+  font-size: 22px;
+  letter-spacing: -0.04em;
+}
+
+.participant-method-heading p,
+.roster-generator header p,
+.participant-roster-toolbar p {
+  max-width: 670px;
+  margin: 0;
+  color: rgba(24, 24, 21, 0.6);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.participant-method-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-top: 1px solid rgba(24, 24, 21, 0.2);
+}
+
+.participant-method-card {
+  position: relative;
+  min-height: 190px;
+  padding: 24px;
+  border: 0;
+  background: transparent;
+  color: #181815;
+  cursor: pointer;
+  text-align: left;
+}
+
+.participant-method-card + .participant-method-card {
+  border-left: 1px solid rgba(24, 24, 21, 0.2);
+}
+
+.participant-method-card.featured {
+  background: #171725;
+  color: #f5f2e9;
+}
+
+.participant-method-card:hover {
+  background: #c8ff36;
+  color: #181815;
+}
+
+.participant-method-card span,
+.participant-method-card strong,
+.participant-method-card p {
+  display: block;
+}
+
+.participant-method-card span {
+  font: 500 9px/1 "DM Mono", monospace;
+  letter-spacing: 0.06em;
+  opacity: 0.55;
+  text-transform: uppercase;
+}
+
+.participant-method-card strong {
+  margin-top: 27px;
+  font-size: 20px;
+  letter-spacing: -0.035em;
+}
+
+.participant-method-card p {
+  max-width: 340px;
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  opacity: 0.6;
+}
+
+.participant-method-card i {
+  position: absolute;
+  right: 24px;
+  bottom: 20px;
+  color: #4734d3;
+  font: normal 20px/1 "DM Mono", monospace;
+}
+
+.roster-generator {
+  display: grid;
+  gap: 22px;
+}
+
+.roster-generator header,
+.participant-roster-toolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.roster-reset {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: rgba(24, 24, 21, 0.55);
+  cursor: pointer;
+  font: 500 9px/1 "DM Mono", monospace;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-transform: uppercase;
+}
+
+.roster-reset:hover {
+  color: #4734d3;
+}
+
+.roster-variable-note {
+  padding: 15px;
+  border-left: 3px solid #9a6814;
+  background: rgba(154, 104, 20, 0.07);
+}
+
+.roster-variable-note strong,
+.roster-variable-note p {
+  display: block;
+}
+
+.roster-variable-note strong {
+  font-size: 11px;
+}
+
+.roster-variable-note p {
+  margin: 5px 0 0;
+  color: rgba(24, 24, 21, 0.62);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.roster-generate {
+  justify-self: start;
+  min-width: 230px;
+}
+
+.participant-roster-toolbar {
+  padding: 18px 20px;
+  border: 1px solid rgba(24, 24, 21, 0.2);
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.participant-roster-toolbar strong {
+  display: block;
+  margin: 6px 0 4px;
+  font-size: 17px;
+}
+
+.participant-roster-toolbar > div:last-child {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+@media (max-width: 720px) {
+  .participant-method-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .participant-method-card + .participant-method-card {
+    border-top: 1px solid rgba(24, 24, 21, 0.2);
+    border-left: 0;
+  }
+
+  .roster-generator header,
+  .participant-roster-toolbar {
+    flex-direction: column;
+  }
+}

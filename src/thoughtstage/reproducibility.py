@@ -8,15 +8,22 @@ import platform
 import subprocess
 import sys
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from pydantic import ValidationError
 
 from thoughtstage import __version__
 from thoughtstage.config import LoadedExperiment
+from thoughtstage.experiment_design import ExperimentLineage
 from thoughtstage.files import ExperimentFileReader
-from thoughtstage.models import ModelUsageEvent, PublicPost, Soliloquy
+from thoughtstage.models import (
+    FileToolEvent,
+    ModelUsageEvent,
+    PublicPost,
+    PublicStimulus,
+    Soliloquy,
+)
 
 
 class RunBundleResumeError(ValueError):
@@ -46,6 +53,49 @@ def collect_files(root: Path | None) -> list[dict[str, Any]]:
         return []
     reader = ExperimentFileReader(root)
     return [reader.file_info(item["path"]) for item in reader.list_files("*")]
+
+
+def collect_lineage(experiment_root: Path) -> dict[str, Any] | None:
+    """Load typed researcher provenance from a generated experiment, when present."""
+
+    path = experiment_root / "lineage.json"
+    if not path.exists():
+        return None
+    try:
+        resolved = path.resolve(strict=True)
+        resolved.relative_to(experiment_root.resolve(strict=True))
+        lineage = ExperimentLineage.model_validate_json(resolved.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValidationError, ValueError) as exc:
+        raise ValueError("experiment lineage is invalid or outside the experiment root") from exc
+    return lineage.model_dump(mode="json")
+
+
+def snapshot_files(
+    root: Path | None,
+    destination: Path,
+    files: list[dict[str, Any]],
+) -> None:
+    """Copy declared experiment inputs into a confined, digest-verified snapshot."""
+
+    if root is None or not files:
+        return
+    reader = ExperimentFileReader(root)
+    destination.mkdir(parents=True, exist_ok=False)
+    resolved_root = root.resolve(strict=True)
+    for item in files:
+        relative = item["path"]
+        verified = reader.file_info(relative)
+        if verified != item:
+            raise RuntimeError(f"experiment input changed while snapshotting: {relative}")
+        logical = PurePosixPath(relative)
+        source = resolved_root.joinpath(*logical.parts).resolve(strict=True)
+        source.relative_to(resolved_root)
+        payload = source.read_bytes()
+        if sha256_bytes(payload) != item["sha256"]:
+            raise RuntimeError(f"experiment input changed while snapshotting: {relative}")
+        target = destination.joinpath(*logical.parts)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(payload)
 
 
 def _read_jsonl_records(
@@ -97,10 +147,25 @@ class RunBundleWriter:
         self.path = Path(output_root).resolve() / self.run_id
         self.path.mkdir(parents=True, exist_ok=False)
         (self.path / "private").mkdir()
+        (self.path / "public").mkdir()
         (self.path / "experiment.yaml").write_bytes(loaded.source_bytes)
 
+        private_briefings = {
+            agent.id: agent.private_briefing
+            for agent in loaded.config.agents
+            if agent.private_briefing is not None
+        }
+        private_briefing_inputs = [
+            {"agent_id": agent_id, "sha256": sha256_bytes(content.encode("utf-8"))}
+            for agent_id, content in private_briefings.items()
+        ]
+        self._write_json(self.path / "private" / "agent_briefings.json", private_briefings)
         self.files = collect_files(loaded.files_root)
         self._write_json(self.path / "files.json", self.files)
+        snapshot_files(loaded.files_root, self.path / "inputs" / "files", self.files)
+        self.lineage = collect_lineage(loaded.source_path.parent)
+        if self.lineage is not None:
+            self._write_json(self.path / "lineage.json", self.lineage)
         self.manifest: dict[str, Any] = {
             "schema_version": "0.1",
             "run_id": self.run_id,
@@ -114,6 +179,7 @@ class RunBundleWriter:
             "experiment": {
                 "id": loaded.config.id,
                 "name": loaded.config.name,
+                "system_prompt": loaded.config.system_prompt,
                 "config_sha256": config_hash,
             },
             "execution": {
@@ -122,6 +188,7 @@ class RunBundleWriter:
                 "turn_order": loaded.config.turn_order.value,
                 "private_memory": loaded.config.private_memory.value,
                 "seed": loaded.config.seed,
+                "scheduled_stimuli": len(loaded.config.stimuli),
             },
             "agents": [
                 {
@@ -139,9 +206,29 @@ class RunBundleWriter:
                 "python": sys.version.split()[0],
                 "platform": platform.platform(),
             },
-            "inputs": {"files": self.files},
-            "counts": {"public_posts": 0, "soliloquies": 0, "model_calls": 0},
+            "inputs": {
+                "files": self.files,
+                "private_briefings": private_briefing_inputs,
+                "scheduled_stimuli": [
+                    {
+                        "id": stimulus.id,
+                        "round": stimulus.round,
+                        "source_id": stimulus.source_id,
+                        "sha256": sha256_bytes(stimulus.content.encode("utf-8")),
+                    }
+                    for stimulus in loaded.config.stimuli
+                ],
+            },
+            "counts": {
+                "public_posts": 0,
+                "public_stimuli": 0,
+                "soliloquies": 0,
+                "model_calls": 0,
+                "file_tool_calls": 0,
+            },
         }
+        if self.lineage is not None:
+            self.manifest["lineage"] = self.lineage
         self._write_manifest()
 
     @classmethod
@@ -174,8 +261,11 @@ class RunBundleWriter:
         self.path = path
         self.files = files
         self.manifest = manifest
+        self.lineage = manifest.get("lineage")
         posts, soliloquies = self.existing_events(repair_trailing_partial=True)
+        stimuli = self.existing_stimuli(repair_trailing_partial=True)
         model_usage = self.existing_model_usage(repair_trailing_partial=True)
+        file_tool_events = self.existing_file_tool_events(repair_trailing_partial=True)
         if len(posts) != len(soliloquies):
             raise RunBundleResumeError("public and private event counts do not match")
 
@@ -192,10 +282,13 @@ class RunBundleWriter:
         )
         self.manifest["status"] = "running"
         self.manifest["completed_at"] = None
+        self.manifest.pop("failure", None)
         self.manifest["counts"] = {
             "public_posts": len(posts),
+            "public_stimuli": len(stimuli),
             "soliloquies": len(soliloquies),
             "model_calls": len(model_usage),
+            "file_tool_calls": len(file_tool_events),
         }
         self._write_manifest()
         return self
@@ -226,6 +319,24 @@ class RunBundleWriter:
             raise RunBundleResumeError("run event stream violates its schema") from exc
         return posts, soliloquies
 
+    def existing_stimuli(
+        self,
+        *,
+        repair_trailing_partial: bool = False,
+    ) -> list[PublicStimulus]:
+        """Load the typed, append-only public stimulus stream."""
+
+        try:
+            return [
+                PublicStimulus.model_validate(value)
+                for value in _read_jsonl_records(
+                    self.path / "public" / "stimuli.jsonl",
+                    repair_trailing_partial=repair_trailing_partial,
+                )
+            ]
+        except ValidationError as exc:
+            raise RunBundleResumeError("public stimulus stream violates its schema") from exc
+
     def existing_model_usage(
         self,
         *,
@@ -243,6 +354,24 @@ class RunBundleWriter:
             ]
         except ValidationError as exc:
             raise RunBundleResumeError("model usage stream violates its schema") from exc
+
+    def existing_file_tool_events(
+        self,
+        *,
+        repair_trailing_partial: bool = False,
+    ) -> list[FileToolEvent]:
+        """Load researcher-private experiment-file tool records from this bundle."""
+
+        try:
+            return [
+                FileToolEvent.model_validate(value)
+                for value in _read_jsonl_records(
+                    self.path / "private" / "file_tools.jsonl",
+                    repair_trailing_partial=repair_trailing_partial,
+                )
+            ]
+        except ValidationError as exc:
+            raise RunBundleResumeError("file tool stream violates its schema") from exc
 
     @staticmethod
     def _write_json(path: Path, value: Any) -> None:
@@ -262,6 +391,12 @@ class RunBundleWriter:
     def write_post(self, post: PublicPost) -> None:
         self._append_jsonl(self.path / "public.jsonl", post.model_dump(mode="json"))
 
+    def write_stimulus(self, stimulus: PublicStimulus) -> None:
+        self._append_jsonl(
+            self.path / "public" / "stimuli.jsonl",
+            stimulus.model_dump(mode="json"),
+        )
+
     def write_soliloquy(self, soliloquy: Soliloquy) -> None:
         self._append_jsonl(
             self.path / "private" / "soliloquies.jsonl",
@@ -274,12 +409,28 @@ class RunBundleWriter:
             usage.model_dump(mode="json"),
         )
 
-    def finish(self, *, public_posts: int, soliloquies: int, model_calls: int) -> None:
+    def write_file_tool_event(self, event: FileToolEvent) -> None:
+        self._append_jsonl(
+            self.path / "private" / "file_tools.jsonl",
+            event.model_dump(mode="json"),
+        )
+
+    def finish(
+        self,
+        *,
+        public_posts: int,
+        public_stimuli: int,
+        soliloquies: int,
+        model_calls: int,
+        file_tool_calls: int,
+    ) -> None:
         self.manifest["status"] = "completed"
         self.manifest["completed_at"] = datetime.now(UTC).isoformat()
         self.manifest["counts"] = {
             "public_posts": public_posts,
+            "public_stimuli": public_stimuli,
             "soliloquies": soliloquies,
             "model_calls": model_calls,
+            "file_tool_calls": file_tool_calls,
         }
         self._write_manifest()

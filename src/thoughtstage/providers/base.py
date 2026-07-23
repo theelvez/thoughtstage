@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from thoughtstage.file_tools import ExperimentFileTools
 from thoughtstage.models import AgentConfig, AgentTurnContext, ProviderResult
 
 
@@ -16,4 +17,5 @@ class Provider(Protocol):
         agent: AgentConfig,
         context: AgentTurnContext,
         seed: int,
+        file_tools: ExperimentFileTools | None = None,
     ) -> ProviderResult: ...

@@ -1,0 +1,37 @@
+schema_version: "0.1"
+id: scheduled-stimuli-demo
+name: Scheduled Stimuli Demo
+description: Key-free demonstration of deterministic researcher-authored public events.
+system_prompt: |
+  You are testing a public-event schedule. Respond to the current researcher
+  stimulus using only evidence visible in the public feed. Never claim access
+  to another participant's private reflection or model binding.
+rounds: 2
+schedule: simultaneous
+turn_order: declared
+private_memory: none
+seed: 42
+stimuli:
+  - id: researcher-opening
+    round: 1
+    source_id: researcher
+    display_name: Researcher
+    content: State one falsifiable prediction about a two-round discussion.
+  - id: researcher-followup
+    round: 2
+    source_id: researcher
+    display_name: Researcher
+    content: Revisit the predictions using only the public evidence now available.
+agents:
+  - id: atlas
+    display_name: Atlas
+    persona_prompt: Be empirical and concise.
+    provider: mock
+    model: deterministic-v1
+    temperature: 0
+  - id: ember
+    display_name: Ember
+    persona_prompt: Look for alternative explanations.
+    provider: mock
+    model: deterministic-v1
+    temperature: 0

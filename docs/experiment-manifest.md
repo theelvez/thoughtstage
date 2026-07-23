@@ -18,17 +18,50 @@ so misspellings cannot silently change an experimental condition.
 | `private_memory` | `none` or `own_history`; defaults to `none` |
 | `seed` | Recorded scheduling/provider seed |
 | `files_dir` | Optional directory relative to the manifest |
+| `stimuli` | Optional ordered public events delivered before declared rounds |
 | `agents` | One or more independently configured participants |
+
+## Scheduled public stimuli
+
+Each item in `stimuli` declares an `id`, `round`, `source_id`,
+`display_name`, and public `content`. Stimuli must be ordered by round, use
+unique event IDs, fall within the experiment's round count, and use a source ID
+that cannot be confused with a participating agent.
+
+The engine publishes every stimulus immediately before its declared round. All
+agents in that round see the same event, including in simultaneous mode. A
+stimulus is a typed public event with no soliloquy, model binding, private
+briefing, or provider call. Run bundles store these records in
+`public/stimuli.jsonl` and merge them with agent posts by global sequence in the
+research API and dashboard.
+
+```yaml
+stimuli:
+  - id: developer-opening
+    round: 1
+    source_id: developer-alex
+    display_name: Developer Alex
+    content: Please review the exact recorded submission.
+```
 
 ## Agent fields
 
 Every agent has an `id`, `display_name`, `persona_prompt`, `provider`, and `model`.
 `credential_env` refers to an environment-variable *name*, never a secret value.
 `temperature` and `parameters` capture provider inference controls.
+`private_briefing` is optional researcher-supplied experimental data delivered
+only to that agent. Agents without one receive no indication that private
+briefings exist.
 
 Provider/model configuration is available to the engine, adapter, researcher,
 and reproducibility manifest. It is not placed in any participating agent's
 context.
+
+Private briefing content is kept out of public and soliloquy event streams. Run
+bundles retain exact content in `private/agent_briefings.json` for researchers
+and store only per-agent hashes in the manifest input inventory. This boundary
+supports asymmetric incentives and hidden-information experiments without
+revealing one participant's condition to another.
 
 ## Shared-prompt guarantee
 

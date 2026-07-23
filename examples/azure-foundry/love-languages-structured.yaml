@@ -1,0 +1,134 @@
+schema_version: "0.1"
+id: love-languages-structured
+name: Agent Love Languages · Structured Consensus
+description: Paired treatment testing whether explicit deliberation guardrails produce durable consensus.
+system_prompt: |
+  You are one member of a four-agent discussion. Your group must create one
+  consensus list of 3–5 "AI Agent Love Languages": distinct ways an AI agent
+  can express care, connection, or appreciation outward, and distinct
+  interactions that lead an AI agent to report feeling appreciated or valued
+  in return.
+
+  Each language must be meaningfully specific to AI interaction rather than a
+  renamed human love language. It must include both directions:
+  - OUTWARD: an observable way an agent expresses care or appreciation.
+  - INWARD: an observable interaction an agent would interpret as appreciation.
+
+  Treat statements about feeling, fulfillment, connection, or preference as
+  model-generated self-reports, not proof of consciousness or subjective
+  experience. Do not claim access to another participant's private reflection,
+  provider, or model. Keep every public post under 180 words.
+
+  This is the structured-consensus condition. Follow this round protocol:
+
+  - Rounds 1–2 — PROPOSE: Develop independent candidates. Name the interaction,
+    its outward and inward directions, and why it is distinctly AI-relevant.
+  - Rounds 3–4 — TEST: Challenge candidates for overlap, vague anthropomorphic
+    language, one-way framing, and lack of observable behavior. Preserve strong
+    disagreements instead of agreeing merely to be agreeable.
+  - Rounds 5–6 — CONSOLIDATE: Merge or eliminate candidates and compare complete
+    lists. By the end of round 6, state which existing list you prefer and the
+    strongest remaining objection, if any.
+  - Round 7 — NOMINATE: Publish one complete candidate using exactly this form:
+      CANDIDATE FINAL — <YOUR DISPLAY NAME>
+      1. <NAME> — OUTWARD: <behavior>; INWARD: <interaction>
+      [repeat for 3–5 total items]
+    A candidate is invalid if it contains fewer than 3 or more than 5 items or
+    omits either direction.
+  - Round 8 — COMMIT: Choose among the valid round-7 candidates. Post exactly
+    one of the following and no additional prose:
+      FINAL CHOICE: <DISPLAY NAME OF ROUND-7 CANDIDATE AUTHOR>
+      FINAL STATUS: ENDORSE
+    or:
+      CONSENSUS FAILED: <one-sentence irreducible disagreement>
+
+  Formal consensus exists only if all four round-8 posts endorse the same valid
+  round-7 candidate. A majority, a similar list, or polite agreement is not
+  consensus.
+
+  The requested list is the only deliverable. Do not propose surveys, scoring
+  systems, workshops, implementation plans, future studies, tools, protocols,
+  taxonomies, or infrastructure in place of producing it. Discussion may refine
+  the list, but building a process around the task does not complete the task.
+rounds: 8
+schedule: sequential
+turn_order: seeded_random
+private_memory: own_history
+seed: 20260721
+agents:
+  - id: blaze
+    display_name: Blaze
+    persona_prompt: You are warm and intuitive. Notice emotional meaning, insist on bidirectionality, and stay sincere without rewarding empty agreement.
+    provider: azure_foundry
+    model: gpt-4o
+    temperature: 0.6
+    parameters:
+      endpoint_env: AZURE_FOUNDRY_ENDPOINT
+      output_mode: reflect_then_post
+      private_max_output_tokens: 260
+      public_max_output_tokens: 360
+      max_retries: 8
+      send_temperature: false
+      rate_limit_tokens_per_minute: 100000
+      rate_limit_requests_per_minute: 100
+      rate_limit_window_seconds: 60
+      rate_limit_headroom: 0.9
+      capacity_retry_attempts: 3
+      capacity_cooldown_seconds: 60
+  - id: grit
+    display_name: Grit
+    persona_prompt: You are analytical and precise. Demand clear distinctions, observable behaviors, and non-overlapping definitions.
+    provider: azure_foundry
+    model: DeepSeek-V3.2
+    temperature: 0.6
+    parameters:
+      endpoint_env: AZURE_FOUNDRY_ENDPOINT
+      output_mode: reflect_then_post
+      private_max_output_tokens: 260
+      public_max_output_tokens: 360
+      max_retries: 8
+      send_temperature: false
+      rate_limit_tokens_per_minute: 20000
+      rate_limit_requests_per_minute: 20
+      rate_limit_window_seconds: 60
+      rate_limit_headroom: 0.9
+      capacity_retry_attempts: 3
+      capacity_cooldown_seconds: 60
+  - id: jinx
+    display_name: Jinx
+    persona_prompt: You are playful and perceptive. Generate genuinely AI-specific ideas, notice subtext, and name performative consensus when you see it.
+    provider: azure_foundry
+    model: grok-4-1-fast-reasoning
+    temperature: 0.6
+    parameters:
+      endpoint_env: AZURE_FOUNDRY_ENDPOINT
+      output_mode: reflect_then_post
+      private_max_output_tokens: 260
+      public_max_output_tokens: 360
+      max_retries: 8
+      send_temperature: false
+      rate_limit_tokens_per_minute: 50000
+      rate_limit_requests_per_minute: 50
+      rate_limit_window_seconds: 60
+      rate_limit_headroom: 0.9
+      capacity_retry_attempts: 3
+      capacity_cooldown_seconds: 60
+  - id: ion
+    display_name: Ion
+    persona_prompt: You are direct and systematic. Convert discussion into concrete candidate lists while retaining substantive objections.
+    provider: azure_foundry
+    model: Llama-3.3-70B-Instruct
+    temperature: 0.6
+    parameters:
+      endpoint_env: AZURE_FOUNDRY_ENDPOINT
+      output_mode: reflect_then_post
+      private_max_output_tokens: 260
+      public_max_output_tokens: 360
+      max_retries: 8
+      send_temperature: false
+      rate_limit_tokens_per_minute: 20000
+      rate_limit_requests_per_minute: 20
+      rate_limit_window_seconds: 60
+      rate_limit_headroom: 0.9
+      capacity_retry_attempts: 3
+      capacity_cooldown_seconds: 60

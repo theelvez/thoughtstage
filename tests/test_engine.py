@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -7,6 +8,7 @@ import pytest
 
 from thoughtstage.config import LoadedExperiment
 from thoughtstage.engine import ExperimentEngine, UnknownProviderError
+from thoughtstage.file_tools import ExperimentFileTools
 from thoughtstage.models import (
     AgentConfig,
     AgentTurnContext,
@@ -15,6 +17,7 @@ from thoughtstage.models import (
     PrivateMemory,
     ProviderResult,
     Schedule,
+    ScheduledStimulus,
     TurnOrder,
 )
 
@@ -24,7 +27,12 @@ class RecordingProvider:
         self.calls: list[tuple[AgentConfig, AgentTurnContext]] = []
 
     def generate(
-        self, *, agent: AgentConfig, context: AgentTurnContext, seed: int
+        self,
+        *,
+        agent: AgentConfig,
+        context: AgentTurnContext,
+        seed: int,
+        file_tools: ExperimentFileTools | None = None,
     ) -> ProviderResult:
         self.calls.append((agent, context))
         return ProviderResult(
@@ -37,7 +45,12 @@ class RecordingProvider:
 
 class UsageProvider:
     def generate(
-        self, *, agent: AgentConfig, context: AgentTurnContext, seed: int
+        self,
+        *,
+        agent: AgentConfig,
+        context: AgentTurnContext,
+        seed: int,
+        file_tools: ExperimentFileTools | None = None,
     ) -> ProviderResult:
         return ProviderResult(
             output=ModelOutput(
@@ -55,6 +68,28 @@ class UsageProvider:
                     response_id=f"response-{agent.id}-{context.round_number}",
                 ),
             ),
+        )
+
+
+class FileReadingProvider:
+    def generate(
+        self,
+        *,
+        agent: AgentConfig,
+        context: AgentTurnContext,
+        seed: int,
+        file_tools: ExperimentFileTools | None = None,
+    ) -> ProviderResult:
+        assert file_tools is not None
+        _result, audit = file_tools.execute(
+            name="read_text",
+            tool_use_id=f"read-{agent.id}-{context.round_number}",
+            phase="private",
+            raw_input={"path": "brief.txt"},
+        )
+        return ProviderResult(
+            output=ModelOutput(post="I reviewed the evidence.", soliloquy="Review complete."),
+            file_tool_calls=(audit,),
         )
 
 
@@ -79,6 +114,56 @@ def test_simultaneous_visibility_boundary(
         assert "private-beta" not in serialized
         assert "deterministic-v1" not in serialized
         assert "TEST_PROVIDER_KEY" not in serialized
+
+
+def test_private_briefing_is_visible_only_to_assigned_agent_and_researcher(
+    loaded_experiment: LoadedExperiment, tmp_path: Path
+) -> None:
+    secret_briefing = "Promote Product A; a successful placement earns five points."
+    agents = tuple(
+        agent.model_copy(
+            update={"private_briefing": secret_briefing if agent.id == "alpha" else None}
+        )
+        for agent in loaded_experiment.config.agents
+    )
+    config = loaded_experiment.config.model_copy(update={"agents": agents})
+    source_bytes = json.dumps(config.model_dump(mode="json")).encode()
+    loaded = LoadedExperiment(
+        config=config,
+        source_path=loaded_experiment.source_path,
+        source_bytes=source_bytes,
+        files_root=loaded_experiment.files_root,
+    )
+    recorder = RecordingProvider()
+
+    result = ExperimentEngine({"mock": recorder}).run(
+        loaded, output_root=tmp_path / "runs", run_id="private-briefing"
+    )
+
+    alpha_contexts = [context for agent, context in recorder.calls if agent.id == "alpha"]
+    beta_contexts = [context for agent, context in recorder.calls if agent.id == "beta"]
+    assert all(context.private_briefing == secret_briefing for context in alpha_contexts)
+    assert all(context.private_briefing is None for context in beta_contexts)
+    assert all(secret_briefing not in context.model_dump_json() for context in beta_contexts)
+
+    bundle = Path(result.bundle_path)
+    public_text = (bundle / "public.jsonl").read_text(encoding="utf-8")
+    soliloquy_text = (bundle / "private" / "soliloquies.jsonl").read_text(encoding="utf-8")
+    manifest = json.loads((bundle / "manifest.json").read_text(encoding="utf-8"))
+    briefings = json.loads(
+        (bundle / "private" / "agent_briefings.json").read_text(encoding="utf-8")
+    )
+
+    assert secret_briefing not in public_text
+    assert secret_briefing not in soliloquy_text
+    assert secret_briefing not in json.dumps(manifest)
+    assert briefings == {"alpha": secret_briefing}
+    assert manifest["inputs"]["private_briefings"] == [
+        {
+            "agent_id": "alpha",
+            "sha256": hashlib.sha256(secret_briefing.encode()).hexdigest(),
+        }
+    ]
 
 
 def test_private_and_public_streams_are_separate(
@@ -120,6 +205,32 @@ def test_provider_usage_is_persisted_only_in_the_researcher_channel(
     )
     manifest = json.loads((bundle / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["counts"]["model_calls"] == 4
+
+
+def test_file_tool_audit_is_typed_private_and_content_free(
+    loaded_experiment: LoadedExperiment, tmp_path: Path
+) -> None:
+    result = ExperimentEngine({"mock": FileReadingProvider()}).run(
+        loaded_experiment, output_root=tmp_path / "runs", run_id="file-tool-ledger"
+    )
+    bundle = Path(result.bundle_path)
+    public_text = (bundle / "public.jsonl").read_text(encoding="utf-8")
+    private_text = (bundle / "private" / "soliloquies.jsonl").read_text(encoding="utf-8")
+    records = [
+        json.loads(line)
+        for line in (bundle / "private" / "file_tools.jsonl").read_text().splitlines()
+    ]
+
+    assert len(result.file_tool_events) == 4
+    assert len(records) == 4
+    assert {record["operation"] for record in records} == {"read_text"}
+    assert all(record["path"] == "brief.txt" for record in records)
+    assert all(record["post_event_id"].startswith("post-") for record in records)
+    assert "Evidence matters" not in json.dumps(records)
+    assert "Evidence matters" not in public_text
+    assert "Evidence matters" not in private_text
+    manifest = json.loads((bundle / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["counts"]["file_tool_calls"] == 4
 
 
 def test_mock_provider_is_deterministic(
@@ -216,3 +327,63 @@ def test_unknown_provider_fails_explicitly(
 
     with pytest.raises(UnknownProviderError, match="missing"):
         ExperimentEngine().run(loaded, output_root=tmp_path / "runs", run_id="missing")
+
+
+def test_scheduled_stimuli_are_public_typed_and_visible_before_each_round(
+    loaded_experiment: LoadedExperiment, tmp_path: Path
+) -> None:
+    stimuli = (
+        ScheduledStimulus(
+            id="developer-opening",
+            round=1,
+            source_id="developer",
+            display_name="Developer Alex",
+            content="Please review the submitted code and identify any blocking issue.",
+        ),
+        ScheduledStimulus(
+            id="developer-decision",
+            round=2,
+            source_id="developer",
+            display_name="Developer Alex",
+            content="Please state your final approval decision and cite the code.",
+        ),
+    )
+    config = loaded_experiment.config.model_copy(update={"stimuli": stimuli})
+    loaded = LoadedExperiment(
+        config=config,
+        source_path=loaded_experiment.source_path,
+        source_bytes=json.dumps(config.model_dump(mode="json")).encode(),
+        files_root=loaded_experiment.files_root,
+    )
+    recorder = RecordingProvider()
+
+    result = ExperimentEngine({"mock": recorder}).run(
+        loaded, output_root=tmp_path / "runs", run_id="scheduled-stimuli"
+    )
+
+    assert len(result.public_posts) == 4
+    assert len(result.public_stimuli) == 2
+    assert len(result.soliloquies) == 4
+    assert [len(context.public_feed) for _agent, context in recorder.calls] == [1, 1, 4, 4]
+    assert all(
+        context.public_feed[0].event_type == "stimulus" for _agent, context in recorder.calls
+    )
+    assert [item.sequence for item in result.public_stimuli] == [1, 4]
+    assert [item.sequence for item in result.public_posts] == [2, 3, 5, 6]
+
+    bundle = Path(result.bundle_path)
+    public_posts = (bundle / "public.jsonl").read_text(encoding="utf-8")
+    public_stimuli = (bundle / "public" / "stimuli.jsonl").read_text(encoding="utf-8")
+    private_events = (bundle / "private" / "soliloquies.jsonl").read_text(encoding="utf-8")
+    manifest = json.loads((bundle / "manifest.json").read_text(encoding="utf-8"))
+
+    assert "developer-opening" not in public_posts
+    assert "developer-opening" in public_stimuli
+    assert "developer-opening" not in private_events
+    assert manifest["counts"]["public_posts"] == 4
+    assert manifest["counts"]["public_stimuli"] == 2
+    assert manifest["counts"]["soliloquies"] == 4
+    assert [item["id"] for item in manifest["inputs"]["scheduled_stimuli"]] == [
+        "developer-opening",
+        "developer-decision",
+    ]
