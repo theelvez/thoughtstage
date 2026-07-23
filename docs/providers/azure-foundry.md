@@ -9,6 +9,9 @@ deployment while sharing the experiment's single system prompt and public feed.
 Microsoft Entra ID is the default and recommended local-development path:
 
 ```bash
+# Run in the same host-side Python environment where Thoughtstage is installed.
+# Linux/macOS
+source .venv/bin/activate
 az login
 # PowerShell
 $env:AZURE_FOUNDRY_ENDPOINT="https://<resource>.services.ai.azure.com"
@@ -19,6 +22,14 @@ export AZURE_FOUNDRY_ENDPOINT="https://<resource>.services.ai.azure.com"
 The adapter obtains a short-lived token for `https://ai.azure.com/.default`
 through `DefaultAzureCredential`. Nothing secret is written into the experiment
 manifest or run bundle.
+
+The Azure CLI login belongs to the process environment on that host. It is not
+automatically inherited by a Docker or Podman container, nor is the host's
+`AZURE_FOUNDRY_ENDPOINT`. For local Entra development, run Thoughtstage from the
+host-side Python environment. A container must instead have its own supported
+credential source, such as workload identity, service-principal environment
+variables, or an environment-referenced API key. Never mount or copy long-lived
+credentials into an image.
 
 API-key authentication is also supported. Put the key in an environment
 variable and set the agent's `credential_env` to that variable's **name**:

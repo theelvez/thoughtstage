@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import ExperimentBuilder from "./ExperimentBuilder";
 import LiveObserver from "./LiveObserver";
 
 type Health = { status: string; version: string };
@@ -141,6 +142,7 @@ function LandingPage() {
 
 function App() {
   const query = new URLSearchParams(window.location.search);
+  if (query.get("view") === "builder") return <ExperimentBuilder />;
   return query.has("landing") ? <LandingPage /> : <LiveObserver />;
 }
 

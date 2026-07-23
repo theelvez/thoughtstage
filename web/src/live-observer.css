@@ -102,6 +102,28 @@
   text-underline-offset: 3px;
 }
 
+.observer-header-actions {
+  justify-self: end;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.builder-launch {
+  padding: 9px 11px;
+  border: 1px solid #181815;
+  color: #181815;
+  font: 500 9px/1 "DM Mono", monospace;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.builder-launch:hover {
+  background: #4734d3;
+  border-color: #4734d3;
+  color: white;
+}
+
 .connection-state {
   justify-self: end;
   display: flex;

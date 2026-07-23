@@ -66,15 +66,27 @@ pytest
 ### Microsoft Foundry models
 
 The `azure_foundry` provider uses the GA OpenAI/v1 Responses API. It supports
-Microsoft Entra ID by default, keeping credentials out of experiment manifests:
+Microsoft Entra ID by default, keeping credentials out of experiment manifests.
+Run these commands from the same host-side Python environment in which
+`thoughtstage` is installed; that lets `DefaultAzureCredential` reuse the Azure
+CLI login:
 
 ```bash
+# Activate the environment created in "Local Python" above first.
+# Linux/macOS: source .venv/bin/activate
 az login
 # PowerShell: $env:AZURE_FOUNDRY_ENDPOINT="https://<resource>.services.ai.azure.com"
 # Linux/macOS: export AZURE_FOUNDRY_ENDPOINT="https://<resource>.services.ai.azure.com"
 thoughtstage validate examples/azure-foundry/experiment.yaml
 thoughtstage run examples/azure-foundry/experiment.yaml
 ```
+
+An `az login` performed on the host is not automatically available inside a
+Docker or Podman container, and host environment variables are not inherited
+unless explicitly passed. For local Entra development, prefer the host-side
+Python workflow above. Container deployments should provide their own workload
+identity, service-principal environment, or environment-referenced API key;
+never bake credentials into an image or experiment manifest.
 
 Each agent can name a different Foundry deployment and can select either strict
 single-call JSON-schema output or the more portable two-call
@@ -102,6 +114,22 @@ Each agent can select an independent Bedrock model or inference profile. See the
 [least-privilege AWS scaffold](infra/aws/README.md). The first four-model run
 series is recorded in the
 [Bedrock model-panel study](docs/experiments/bedrock-first-panel.md).
+
+### Researcher experiment builder
+
+Open <http://127.0.0.1:5173/?view=builder> while the local API and dashboard
+are running, or use `/?view=builder` on the container dashboard. The guided
+workflow collects the shared prompt, independent agent/model bindings, private
+agent briefings, schedule, researcher interventions, and UTF-8 experiment files.
+It previews the validated YAML before atomically creating
+`experiments/<experiment-id>/experiment.yaml` and its confined `files/`
+directory. Credential values are never accepted; the builder records optional
+environment-variable names only.
+
+The container configuration bind-mounts `experiments/` so researcher-created
+studies survive image replacement. Generated studies are normal Thoughtstage
+manifests and can be validated, run, reviewed, and committed like handwritten
+experiments.
 
 ### Live observer
 

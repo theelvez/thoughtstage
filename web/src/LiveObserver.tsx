@@ -336,9 +336,12 @@ function LiveObserver() {
           )}
         </div>
 
-        <div className={`connection-state ${connected ? "connected" : "disconnected"}`}>
-          <span aria-hidden="true" />
-          {connected ? "Observer connected" : "Observer offline"}
+        <div className="observer-header-actions">
+          <a className="builder-launch" href="/?view=builder">+ New experiment</a>
+          <div className={`connection-state ${connected ? "connected" : "disconnected"}`}>
+            <span aria-hidden="true" />
+            {connected ? "Observer connected" : "Observer offline"}
+          </div>
         </div>
       </header>
 

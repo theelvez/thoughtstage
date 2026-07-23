@@ -2,9 +2,19 @@
 
 from __future__ import annotations
 
-from fastapi import FastAPI, HTTPException
+import os
+from pathlib import Path
+
+from fastapi import FastAPI, HTTPException, status
 
 from thoughtstage import __version__
+from thoughtstage.experiment_design import (
+    ExperimentAlreadyExistsError,
+    ExperimentDraft,
+    artifact_paths,
+    render_experiment_yaml,
+    save_experiment_draft,
+)
 from thoughtstage.models import ExperimentConfig
 from thoughtstage.observer import (
     RunBundleNotFoundError,
@@ -39,6 +49,39 @@ def design_contract() -> dict:
         "private_channel": "soliloquies are researcher-only",
         "model_identity": "provider and model metadata are never placed in agent context",
         "default_private_memory": "none",
+    }
+
+
+def _experiments_root() -> Path:
+    return Path(os.getenv("THOUGHTSTAGE_EXPERIMENTS_ROOT", "experiments"))
+
+
+@app.post("/api/experiments/preview")
+def preview_experiment(draft: ExperimentDraft) -> dict:
+    """Compile a typed wizard draft without writing researcher data."""
+
+    return {
+        "valid": True,
+        "experiment_id": draft.experiment.id,
+        "yaml": render_experiment_yaml(draft),
+        "artifacts": artifact_paths(draft),
+    }
+
+
+@app.post("/api/experiments", status_code=status.HTTP_201_CREATED)
+def create_experiment(draft: ExperimentDraft) -> dict:
+    """Atomically materialize a new, validated experiment workspace."""
+
+    try:
+        directory = save_experiment_draft(draft, _experiments_root())
+    except ExperimentAlreadyExistsError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {
+        "created": True,
+        "experiment_id": draft.experiment.id,
+        "directory": str(directory),
+        "manifest": str(directory / "experiment.yaml"),
+        "artifacts": artifact_paths(draft),
     }
 
 
