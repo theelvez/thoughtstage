@@ -53,11 +53,46 @@ type LaunchResult = {
 
 const steps = ["Research question", "Participants", "Interaction", "Materials", "Review"];
 
+const providerModels: Record<Provider, readonly { value: string; label: string }[]> = {
+  mock: [
+    { value: "deterministic-mock", label: "Deterministic mock · recommended" },
+    { value: "deterministic-v1", label: "Deterministic mock · legacy example ID" },
+  ],
+  azure_foundry: [
+    { value: "gpt-4o", label: "GPT-4o" },
+    { value: "Llama-3.3-70B-Instruct", label: "Llama 3.3 70B Instruct" },
+    { value: "grok-4-1-fast-reasoning", label: "Grok 4.1 Fast Reasoning" },
+    { value: "DeepSeek-V3.2", label: "DeepSeek V3.2" },
+  ],
+  bedrock: [
+    { value: "us.amazon.nova-2-lite-v1:0", label: "Amazon Nova 2 Lite" },
+    { value: "us.amazon.nova-pro-v1:0", label: "Amazon Nova Pro" },
+    {
+      value: "us.meta.llama4-scout-17b-instruct-v1:0",
+      label: "Meta Llama 4 Scout 17B Instruct",
+    },
+    {
+      value: "us.meta.llama4-maverick-17b-instruct-v1:0",
+      label: "Meta Llama 4 Maverick 17B Instruct",
+    },
+    {
+      value: "mistral.mistral-large-3-675b-instruct",
+      label: "Mistral Large 3 675B Instruct",
+    },
+  ],
+};
+
+const providerModelHelp: Record<Provider, string> = {
+  mock: "Built-in key-free models.",
+  azure_foundry: "Known Thoughtstage deployments. You may enter your own deployment name.",
+  bedrock: "Known Bedrock model and inference-profile IDs. You may enter another ID.",
+};
+
 const providerDefaults: Record<Provider, { model: string; credentialEnv: string }> = {
-  mock: { model: "deterministic-mock", credentialEnv: "" },
-  azure_foundry: { model: "gpt-4o", credentialEnv: "" },
+  mock: { model: providerModels.mock[0].value, credentialEnv: "" },
+  azure_foundry: { model: providerModels.azure_foundry[0].value, credentialEnv: "" },
   bedrock: {
-    model: "us.amazon.nova-2-lite-v1:0",
+    model: providerModels.bedrock[0].value,
     credentialEnv: "THOUGHTSTAGE_AWS_PROFILE",
   },
 };
@@ -436,7 +471,20 @@ function ExperimentBuilder() {
                       <label className="field"><span>Provider</span><select value={agent.provider} onChange={(event) => changeProvider(agent.key, event.target.value as Provider)}><option value="mock">Mock · no cost</option><option value="azure_foundry">Microsoft Foundry</option><option value="bedrock">Amazon Bedrock</option></select></label>
                     </div>
                     <div className="field-row">
-                      <label className="field"><span>Model or deployment</span><input value={agent.model} onChange={(event) => updateAgent(agent.key, { model: event.target.value })} /></label>
+                      <label className="field">
+                        <span>Model or deployment</span>
+                        <input
+                          list={`model-options-${agent.key}`}
+                          value={agent.model}
+                          onChange={(event) => updateAgent(agent.key, { model: event.target.value })}
+                        />
+                        <datalist id={`model-options-${agent.key}`}>
+                          {providerModels[agent.provider].map((model) => (
+                            <option key={model.value} value={model.value} label={model.label} />
+                          ))}
+                        </datalist>
+                        <small>{providerModelHelp[agent.provider]}</small>
+                      </label>
                       <label className="field"><span>Credential environment name</span><input value={agent.credentialEnv} onChange={(event) => updateAgent(agent.key, { credentialEnv: event.target.value.toUpperCase() })} placeholder="Optional · never the credential value" /><small>Enter only the environment-variable name.</small></label>
                     </div>
                     <label className="field wide"><span>Public-role persona</span><textarea rows={3} value={agent.persona} onChange={(event) => updateAgent(agent.key, { persona: event.target.value })} /></label>

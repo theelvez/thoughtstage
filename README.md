@@ -121,6 +121,8 @@ Open <http://127.0.0.1:5173/?view=builder> while the local API and dashboard
 are running, or use `/?view=builder` on the container dashboard. The guided
 workflow collects the shared prompt, independent agent/model bindings, private
 agent briefings, schedule, researcher interventions, and UTF-8 experiment files.
+The model field offers provider-specific, known-working choices while remaining
+editable for account-specific Foundry deployments and Bedrock inference profiles.
 It previews the validated YAML before atomically creating
 `experiments/<experiment-id>/experiment.yaml` and its confined `files/`
 directory. Choose **Create, validate & launch** to check provider readiness,
