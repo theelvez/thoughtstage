@@ -657,6 +657,15 @@
   font: 500 10px/1.4 "DM Mono", monospace;
 }
 
+.review-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.review-actions .secondary-action {
+  min-height: 44px;
+}
+
 .save-button {
   min-height: 52px;
   padding: 0 18px;

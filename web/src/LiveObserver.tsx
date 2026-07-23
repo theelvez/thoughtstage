@@ -21,6 +21,7 @@ type RunSummary = {
   status: string;
   created_at: string | null;
   completed_at: string | null;
+  failure?: { type?: string; message?: string } | null;
   experiment: { id?: string; name?: string; system_prompt?: string };
   execution: { rounds?: number; schedule?: string };
   agents: Agent[];
@@ -175,9 +176,10 @@ function PostCard({
 }
 
 function LiveObserver() {
+  const requestedRunId = new URLSearchParams(window.location.search).get("run") ?? "";
   const [runs, setRuns] = useState<RunSummary[]>([]);
-  const [selectedRunId, setSelectedRunId] = useState("");
-  const [manualSelection, setManualSelection] = useState(false);
+  const [selectedRunId, setSelectedRunId] = useState(requestedRunId);
+  const [manualSelection, setManualSelection] = useState(Boolean(requestedRunId));
   const [detail, setDetail] = useState<RunDetail | null>(null);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState("");
@@ -324,7 +326,10 @@ function LiveObserver() {
               setRevealed(new Set());
             }}
           >
-            {runs.length === 0 && <option value="">No runs found</option>}
+            {runs.length === 0 && !selectedRunId && <option value="">No runs found</option>}
+            {selectedRunId && !runs.some((run) => run.run_id === selectedRunId) && (
+              <option value={selectedRunId}>Starting run…</option>
+            )}
             {runs.map((run) => (
               <option value={run.run_id} key={run.run_id}>
                 {run.experiment.name ?? run.run_id} · {run.status}
@@ -347,8 +352,8 @@ function LiveObserver() {
 
       <section className="run-strip">
         <div className="run-title">
-          <span className={`run-state ${detail?.status === "running" ? "is-live" : ""}`}>
-            {detail?.status === "running" ? "Live experiment" : detail?.status ?? "Standby"}
+          <span className={`run-state ${detail?.status === "running" ? "is-live" : ""} ${detail?.status === "failed" ? "is-failed" : ""}`}>
+            {detail?.status === "running" ? "Live experiment" : detail?.status === "failed" ? "Run failed" : detail?.status ?? "Standby"}
           </span>
           <h1>{detail?.experiment.name ?? "Waiting for a run"}</h1>
           <p>{detail ? `${detail.execution.schedule ?? "unknown"} schedule · started ${formatRunTime(detail.created_at)}` : "Start a Thoughtstage run to populate the observer."}</p>
@@ -373,6 +378,12 @@ function LiveObserver() {
       </section>
 
       {error && <div className="observer-error">{error}</div>}
+      {detail?.status === "failed" && (
+        <div className="observer-error">
+          {detail.failure?.message ?? "Experiment execution failed."}
+          {detail.failure?.type ? ` (${detail.failure.type})` : ""}
+        </div>
+      )}
 
       <div className="observer-layout">
         <section className="feed-column" aria-label="Public conversation">

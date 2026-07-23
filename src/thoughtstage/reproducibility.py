@@ -231,6 +231,7 @@ class RunBundleWriter:
         )
         self.manifest["status"] = "running"
         self.manifest["completed_at"] = None
+        self.manifest.pop("failure", None)
         self.manifest["counts"] = {
             "public_posts": len(posts),
             "public_stimuli": len(stimuli),

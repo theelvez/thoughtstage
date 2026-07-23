@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, status
+from fastapi import BackgroundTasks, FastAPI, HTTPException, status
 
 from thoughtstage import __version__
 from thoughtstage.experiment_design import (
@@ -14,6 +14,13 @@ from thoughtstage.experiment_design import (
     artifact_paths,
     render_experiment_yaml,
     save_experiment_draft,
+)
+from thoughtstage.experiment_launch import (
+    ExperimentLaunchError,
+    ExperimentNotFoundError,
+    ProviderReadinessError,
+    execute_launch,
+    prepare_launch,
 )
 from thoughtstage.models import ExperimentConfig
 from thoughtstage.observer import (
@@ -82,6 +89,33 @@ def create_experiment(draft: ExperimentDraft) -> dict:
         "directory": str(directory),
         "manifest": str(directory / "experiment.yaml"),
         "artifacts": artifact_paths(draft),
+    }
+
+
+@app.post(
+    "/api/experiments/{experiment_id}/launch",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def launch_experiment(experiment_id: str, background_tasks: BackgroundTasks) -> dict:
+    """Validate provider readiness and launch a saved experiment asynchronously."""
+
+    try:
+        prepared = prepare_launch(
+            experiment_id,
+            experiments_root=_experiments_root(),
+        )
+    except ExperimentNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ProviderReadinessError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ExperimentLaunchError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    background_tasks.add_task(execute_launch, prepared)
+    return {
+        "accepted": True,
+        "experiment_id": experiment_id,
+        "run_id": prepared.run_id,
+        "observer_url": f"/?run={prepared.run_id}",
     }
 
 

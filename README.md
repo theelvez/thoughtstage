@@ -123,8 +123,11 @@ workflow collects the shared prompt, independent agent/model bindings, private
 agent briefings, schedule, researcher interventions, and UTF-8 experiment files.
 It previews the validated YAML before atomically creating
 `experiments/<experiment-id>/experiment.yaml` and its confined `files/`
-directory. Credential values are never accepted; the builder records optional
-environment-variable names only.
+directory. Choose **Create, validate & launch** to check provider readiness,
+start a uniquely identified run, and move directly to that run in the live
+observer. A failed provider call leaves a visible, terminal failed run instead
+of an indefinitely running bundle. Credential values are never accepted; the
+builder records and checks optional environment-variable names only.
 
 The container configuration bind-mounts `experiments/` so researcher-created
 studies survive image replacement. Generated studies are normal Thoughtstage

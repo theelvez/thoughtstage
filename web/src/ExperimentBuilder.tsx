@@ -44,6 +44,13 @@ type SaveResult = {
   artifacts: string[];
 };
 
+type LaunchResult = {
+  accepted: boolean;
+  experiment_id: string;
+  run_id: string;
+  observer_url: string;
+};
+
 const steps = ["Research question", "Participants", "Interaction", "Materials", "Review"];
 
 const providerDefaults: Record<Provider, { model: string; credentialEnv: string }> = {
@@ -141,8 +148,10 @@ function ExperimentBuilder() {
   const [preview, setPreview] = useState<Preview | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [launching, setLaunching] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState<SaveResult | null>(null);
+  const [launchResult, setLaunchResult] = useState<LaunchResult | null>(null);
 
   const duplicateAgentIds = useMemo(() => {
     const seen = new Set<string>();
@@ -221,6 +230,7 @@ function ExperimentBuilder() {
       setPreviewing(true);
       setPreview(null);
       setSaved(null);
+      setLaunchResult(null);
       setError("");
       try {
         const response = await fetch("/api/experiments/preview", {
@@ -280,23 +290,52 @@ function ExperimentBuilder() {
     });
   };
 
+  const persistExperiment = async () => {
+    const response = await fetch("/api/experiments", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const body = await response.json() as unknown;
+    if (!response.ok) throw new Error(errorMessage(body, `Save failed (${response.status})`));
+    return body as SaveResult;
+  };
+
   const saveExperiment = async () => {
     setSaving(true);
-    setSaved(null);
     setError("");
     try {
-      const response = await fetch("/api/experiments", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const body = await response.json() as unknown;
-      if (!response.ok) throw new Error(errorMessage(body, `Save failed (${response.status})`));
-      setSaved(body as SaveResult);
+      const result = await persistExperiment();
+      setSaved(result);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Experiment could not be saved");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const launchExperiment = async () => {
+    setLaunching(true);
+    setLaunchResult(null);
+    setError("");
+    try {
+      let experiment = saved;
+      if (!experiment) {
+        experiment = await persistExperiment();
+        setSaved(experiment);
+      }
+      const response = await fetch(
+        `/api/experiments/${encodeURIComponent(experiment.experiment_id)}/launch`,
+        { method: "POST" },
+      );
+      const body = await response.json() as unknown;
+      if (!response.ok) throw new Error(errorMessage(body, `Launch failed (${response.status})`));
+      const result = body as LaunchResult;
+      setLaunchResult(result);
+      window.location.assign(result.observer_url);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Experiment could not be launched");
+      setLaunching(false);
     }
   };
 
@@ -459,18 +498,27 @@ function ExperimentBuilder() {
                 <div className="boundary-checks"><h2>Research boundaries</h2><p>✓ One shared system prompt</p><p>✓ Public feed shared by schedule</p><p>✓ Soliloquies sealed per participant</p><p>✓ Credential names only</p><p>✓ Experiment files confined read-only</p></div>
                 {previewing && <div className="compile-state">Validating experiment…</div>}
                 {error && <div className="inline-error">{error}</div>}
-                {saved ? (
-                  <div className="save-success"><strong>Experiment created</strong><p>{saved.manifest}</p><a href="/">Return to the observer</a></div>
-                ) : (
-                  <button className="save-button" type="button" disabled={!preview || saving} onClick={() => void saveExperiment()}>{saving ? "Creating…" : "Create experiment files"}</button>
+                {saved && (
+                  <div className="save-success"><strong>Experiment created</strong><p>{saved.manifest}</p></div>
                 )}
+                {launchResult && <div className="compile-state">Run {launchResult.run_id} accepted. Opening the observer…</div>}
+                <div className="review-actions">
+                  <button className="save-button" type="button" disabled={!preview || saving || launching} onClick={() => void launchExperiment()}>
+                    {launching ? "Launching…" : saved ? "Validate & launch experiment" : "Create, validate & launch"}
+                  </button>
+                  {!saved && (
+                    <button className="secondary-action" type="button" disabled={!preview || saving || launching} onClick={() => void saveExperiment()}>
+                      {saving ? "Creating…" : "Create files only"}
+                    </button>
+                  )}
+                </div>
               </div>
               <div className="yaml-preview"><header><span>Generated artifact</span><strong>experiment.yaml</strong></header><pre>{preview?.yaml ?? "Waiting for validation…"}</pre><footer>{preview ? `${preview.artifacts.length} artifact${preview.artifacts.length === 1 ? "" : "s"} ready` : "Compiling"}</footer></div>
             </div>
           )}
 
           <footer className="builder-controls">
-            <button type="button" className="back-button" disabled={step === 0 || saving} onClick={() => setStep((value) => Math.max(0, value - 1))}>Back</button>
+            <button type="button" className="back-button" disabled={step === 0 || saving || launching} onClick={() => setStep((value) => Math.max(0, value - 1))}>Back</button>
             {step < steps.length - 1 && <button type="button" className="next-button" disabled={!stepReady} onClick={() => setStep((value) => Math.min(steps.length - 1, value + 1))}>Continue <span>→</span></button>}
           </footer>
         </section>

@@ -188,6 +188,10 @@
   animation: observer-pulse 1.5s ease-in-out infinite;
 }
 
+.run-state.is-failed {
+  color: #b64b38;
+}
+
 .run-title p {
   margin: 0;
   opacity: 0.5;

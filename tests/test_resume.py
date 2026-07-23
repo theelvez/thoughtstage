@@ -109,6 +109,11 @@ def test_resume_replays_completed_turns_and_generates_only_the_missing_turn(
 ) -> None:
     loaded = _sequential_experiment(experiment_file)
     bundle = _interrupted_bundle(loaded, tmp_path / "runs")
+    manifest_path = bundle / "manifest.json"
+    interrupted_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    interrupted_manifest["status"] = "failed"
+    interrupted_manifest["failure"] = {"type": "RuntimeError", "message": "safe failure"}
+    manifest_path.write_text(json.dumps(interrupted_manifest), encoding="utf-8")
     provider = ResumeProvider()
 
     result = ExperimentEngine({"mock": provider}).run(loaded, resume_path=bundle)
@@ -127,6 +132,7 @@ def test_resume_replays_completed_turns_and_generates_only_the_missing_turn(
     )
     manifest = json.loads((bundle / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["status"] == "completed"
+    assert "failure" not in manifest
     assert manifest["counts"]["model_calls"] == 2
     assert len(manifest["resumptions"]) == 1
 
@@ -219,6 +225,11 @@ def test_resume_replays_scheduled_stimulus_without_regenerating_it(
 ) -> None:
     loaded = _with_round_one_stimulus(_sequential_experiment(experiment_file))
     bundle = _interrupted_bundle(loaded, tmp_path / "runs")
+    manifest_path = bundle / "manifest.json"
+    interrupted_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    interrupted_manifest["status"] = "failed"
+    interrupted_manifest["failure"] = {"type": "RuntimeError", "message": "safe failure"}
+    manifest_path.write_text(json.dumps(interrupted_manifest), encoding="utf-8")
     provider = ResumeProvider()
 
     result = ExperimentEngine({"mock": provider}).run(loaded, resume_path=bundle)
