@@ -10,6 +10,7 @@
 }
 
 .workbench-dialog {
+  box-sizing: border-box;
   width: min(1280px, 100%);
   height: min(850px, calc(100vh - 44px));
   display: grid;
@@ -119,6 +120,7 @@
 .workbench-content {
   min-width: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 26px;
 }
 
@@ -924,10 +926,18 @@
 }
 
 @media (max-width: 620px) {
-  .workbench-header,
   .workbench-section-heading,
   .clone-success {
     flex-direction: column;
+  }
+
+  .workbench-header {
+    gap: 12px;
+    padding: 18px;
+  }
+
+  .workbench-header h2 {
+    font-size: 26px;
   }
 
   .workbench-content {
