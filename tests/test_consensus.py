@@ -64,6 +64,66 @@ def test_consensus_timeline_does_not_impute_indirect_positions() -> None:
     assert all(item.transition == "undetermined" for item in result.observations)
 
 
+def test_consensus_timeline_rejects_incidental_preference_and_winner_phrases() -> None:
+    posts = [
+        _post(
+            1,
+            1,
+            "oak",
+            "Oak",
+            "Prefer 4 or 8? Either could render well; there is no verdict yet.",
+        ),
+        _post(
+            2,
+            1,
+            "pine",
+            "Pine",
+            "Tabs could be the clear winner: structure and flexibility. No verdict yet.",
+        ),
+    ]
+
+    result = analyze_consensus("false-positive-run", posts)
+
+    assert result.rounds[0].detected_stances == 0
+    assert result.final_classification == "insufficient_signal"
+
+
+def test_consensus_requires_participant_coverage_and_reads_labeled_verdicts() -> None:
+    partial = analyze_consensus(
+        "partial-run",
+        [
+            _post(1, 1, "oak", "Oak", "I choose spaces for predictable rendering."),
+            _post(2, 1, "pine", "Pine", "I am still evaluating the evidence."),
+        ],
+    )
+    converged = analyze_consensus(
+        "verdict-run",
+        [
+            _post(1, 1, "oak", "Oak", "**Final stance:** Spaces for teams."),
+            _post(2, 1, "pine", "Pine", "I've landed firmly in the spaces camp."),
+        ],
+    )
+
+    assert partial.rounds[0].classification == "leaning"
+    assert partial.rounds[0].stance_coverage == 0.5
+    assert converged.rounds[0].classification == "consensus"
+    assert converged.rounds[0].leading_stance.casefold() == "spaces"
+
+
+def test_consensus_compares_new_explicit_stance_to_last_explicit_stance() -> None:
+    result = analyze_consensus(
+        "gap-run",
+        [
+            _post(1, 1, "oak", "Oak", "I choose Q for now."),
+            _post(2, 2, "oak", "Oak", "The evidence deserves another round."),
+            _post(3, 3, "oak", "Oak", "I now choose X after the new evidence."),
+        ],
+    )
+
+    assert result.observations[1].transition == "undetermined"
+    assert result.observations[2].transition == "possible_shift"
+
+
 def test_ranking_extraction_uses_declared_winner() -> None:
     posts = [
         _post(

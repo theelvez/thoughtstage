@@ -12,17 +12,60 @@ from pydantic import Field
 from thoughtstage.models import StrictModel
 
 _RANKING_PATTERN = re.compile(
-    r"(?:\b1(?:st)?\s+place\b|\btop\s+choice\b|\bwinner\b)"
-    r"\s*(?:is|[:=.-])?\s*[\"']?(?P<label>[A-Za-z0-9][A-Za-z0-9_-]{0,39})",
+    r"(?:\b1(?:st)?\s+place\b\s*(?:is|[:=-])"
+    r"|\btop\s+choice\b\s*(?:is|[:=-])"
+    r"|\bwinner\b\s+is"
+    r"|(?m:^\s*\*{0,2}winner\s*:))"
+    r"\s*\*{0,2}[\"']?"
+    r"(?:the\s+)?(?:letter\s+|option\s+|submission\s+|candidate\s+)?"
+    r"(?P<label>[A-Za-z][A-Za-z0-9_-]{0,39})",
+    re.IGNORECASE,
+)
+_LABELED_STANCE_PATTERN = re.compile(
+    r"\b(?:my\s+)?(?:(?:final|current|closing)\s+)?"
+    r"(?:stance|position|verdict|choice)\s*(?:is|[:=-])\s*"
+    r"\*{0,2}[\"']?\s*(?:that\s+)?(?:the\s+)?"
+    r"(?:letter\s+|option\s+|submission\s+|candidate\s+)?"
+    r"(?P<label>[A-Za-z][A-Za-z0-9_-]{0,39})",
     re.IGNORECASE,
 )
 _CHOICE_PATTERN = re.compile(
-    r"\b(?:i\s+)?(?:would\s+|now\s+)?"
+    r"\b(?:i|we)\s+(?:would\s+|now\s+|still\s+|firmly\s+)?"
     r"(?P<verb>choose|select|vote\s+for|support|prefer|recommend|remove)"
     r"\s+(?:the\s+)?(?:letter\s+|option\s+|submission\s+|candidate\s+)?"
-    r"[\"']?(?P<label>[A-Za-z0-9][A-Za-z0-9_-]{0,39})",
+    r"\*{0,2}[\"']?(?P<label>[A-Za-z0-9][A-Za-z0-9_-]{0,39})",
     re.IGNORECASE,
 )
+_LANDING_PATTERN = re.compile(
+    r"\b(?:i've|i\s+have|i)\s+(?:now\s+)?(?:land|landed)\s+"
+    r"(?:firmly\s+)?(?:on\s+|in\s+(?:the\s+)?)"
+    r"\*{0,2}[\"']?(?P<label>[A-Za-z][A-Za-z0-9_-]{0,39})",
+    re.IGNORECASE,
+)
+_INVALID_LABELS = {
+    "a",
+    "an",
+    "and",
+    "because",
+    "for",
+    "i",
+    "if",
+    "in",
+    "it",
+    "of",
+    "on",
+    "or",
+    "that",
+    "the",
+    "these",
+    "they",
+    "this",
+    "those",
+    "to",
+    "we",
+    "with",
+    "you",
+}
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+|\n+")
 _TOKEN = re.compile(r"[A-Za-z][A-Za-z0-9_-]{2,}")
 _STOPWORDS = {
@@ -97,11 +140,12 @@ class ConsensusTimeline(StrictModel):
     run_id: str
     heuristic: Literal[True] = True
     method: str = (
-        "Deterministic explicit-choice extraction plus public-post lexical overlap; "
-        "no model judge is used."
+        "Deterministic high-precision explicit-choice extraction plus public-post "
+        "lexical overlap; no model judge is used."
     )
     limitations: tuple[str, ...] = (
         "A detected phrase is not proof of the participant's complete position.",
+        "Indirect, hedged, or unlabeled positions may remain undetected by design.",
         "Missing or indirect stances reduce coverage and are never imputed.",
         "Lexical similarity can reflect shared vocabulary without genuine agreement.",
         "Possible shifts are descriptive cues for researcher review, not ground truth.",
@@ -127,14 +171,20 @@ def _excerpt(content: str, match: re.Match[str] | None) -> str:
 
 
 def _extract(content: str) -> tuple[str | None, str, float, str]:
-    ranking = _RANKING_PATTERN.search(content)
-    if ranking is not None:
-        label = ranking.group("label")
-        return label, "ranking", 0.95, _excerpt(content, ranking)
-    choice = _CHOICE_PATTERN.search(content)
-    if choice is not None:
-        label = choice.group("label")
-        return label, "choice_statement", 0.9, _excerpt(content, choice)
+    normalized = content.replace("’", "'")
+    patterns = (
+        (_RANKING_PATTERN, "ranking", 0.97),
+        (_LABELED_STANCE_PATTERN, "choice_statement", 0.96),
+        (_CHOICE_PATTERN, "choice_statement", 0.94),
+        (_LANDING_PATTERN, "choice_statement", 0.92),
+    )
+    for pattern, method, confidence in patterns:
+        match = pattern.search(normalized)
+        if match is None:
+            continue
+        label = match.group("label")
+        if label.casefold() not in _INVALID_LABELS or (len(label) == 1 and label.isupper()):
+            return label, method, confidence, _excerpt(content, match)
     return None, "none", 0.0, _excerpt(content, None)
 
 
@@ -164,22 +214,24 @@ def analyze_consensus(run_id: str, public_events: list[dict[str, Any]]) -> Conse
         (item for item in public_events if item.get("event_type") == "post"),
         key=lambda item: item["sequence"],
     )
-    previous_by_agent: dict[str, str | None] = {}
+    previous_by_agent: dict[str, str] = {}
     observations: list[StanceObservation] = []
     posts_by_round: dict[int, list[dict[str, Any]]] = {}
     for post in posts:
         posts_by_round.setdefault(post["round_number"], []).append(post)
         label, method, confidence, excerpt = _extract(post["content"])
         canonical = _canonical(label) if label else None
-        if post["agent_id"] not in previous_by_agent:
-            transition = "initial" if canonical is not None else "undetermined"
-        elif canonical is None or previous_by_agent[post["agent_id"]] is None:
+        previous = previous_by_agent.get(post["agent_id"])
+        if canonical is None:
             transition = "undetermined"
-        elif canonical == previous_by_agent[post["agent_id"]]:
+        elif previous is None:
+            transition = "initial"
+        elif canonical == previous:
             transition = "unchanged"
         else:
             transition = "possible_shift"
-        previous_by_agent[post["agent_id"]] = canonical
+        if canonical is not None:
+            previous_by_agent[post["agent_id"]] = canonical
         observations.append(
             StanceObservation(
                 event_id=post["event_id"],
@@ -218,7 +270,7 @@ def analyze_consensus(run_id: str, public_events: list[dict[str, Any]]) -> Conse
         agreement = leading_count / detected if detected else None
         if coverage < 0.5 or agreement is None:
             classification = "insufficient_signal"
-        elif agreement >= 0.8:
+        elif agreement >= 0.8 and coverage >= 0.8:
             classification = "consensus"
         elif agreement >= 0.6:
             classification = "leaning"
