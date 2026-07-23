@@ -176,6 +176,18 @@ each agent post's paired soliloquy can be opened independently in the
 researcher-only backstage view. Stimuli are visibly marked and never receive a
 private reflection.
 
+Completed runs expose a **Research workbench** beside the results summary. It
+keeps six post-experiment workflows together: an evidence-backed integrity
+check, a self-verifying reproducibility export, controlled one-variable clones,
+side-by-side run comparison, researcher-private bookmarks and annotations, and
+an explicitly heuristic consensus/stance timeline. Star buttons on public posts,
+stimuli, and opened soliloquies create annotations in
+`private/annotations.json`; annotation content never enters the public stream or
+participant context. Clone lineage is carried into the generated experiment and
+every resulting run bundle. The timeline uses only explicit signals in public
+posts and reports coverage and extraction confidence instead of imputing hidden
+beliefs.
+
 If a provider interruption leaves a valid partial bundle, resume only its
 missing turns instead of repeating successful calls:
 
@@ -206,10 +218,15 @@ runs/<run-id>/
 ├── manifest.json
 ├── experiment.yaml
 ├── files.json
+├── lineage.json                 # controlled clones only
+├── inputs/
+│   └── files/                   # exact declared input snapshots
 ├── public.jsonl
 ├── public/
 │   └── stimuli.jsonl
 └── private/
+    ├── agent_briefings.json
+    ├── annotations.json         # when a researcher annotates the run
     ├── file_tools.jsonl
     ├── soliloquies.jsonl
     └── model_usage.jsonl
@@ -220,6 +237,19 @@ revision, scheduling semantics, seed, provider/model identifiers, inference
 parameters, and credential *references*. Secret values are never copied. When a
 provider reports token usage, successful calls are written only to the private
 ledger and can be summarized with `thoughtstage usage runs/<run-id>`.
+
+Verify or export a completed bundle from the command line with:
+
+```bash
+thoughtstage integrity runs/<run-id>
+thoughtstage export-bundle runs/<run-id> -o <run-id>.zip
+```
+
+The exporter refuses incomplete or invalid runs. Its deterministic ZIP contains
+the public and researcher-private streams, exact file snapshots, software and
+lineage metadata, an integrity report, and a checksum index. Treat it as
+researcher-private unless its private inputs and outputs have been reviewed for
+publication.
 
 See [the architecture](docs/architecture.md), [the experiment manifest](docs/experiment-manifest.md),
 and [the reproducibility contract](docs/reproducibility.md).

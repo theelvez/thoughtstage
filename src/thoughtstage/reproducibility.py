@@ -8,13 +8,14 @@ import platform
 import subprocess
 import sys
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from pydantic import ValidationError
 
 from thoughtstage import __version__
 from thoughtstage.config import LoadedExperiment
+from thoughtstage.experiment_design import ExperimentLineage
 from thoughtstage.files import ExperimentFileReader
 from thoughtstage.models import (
     FileToolEvent,
@@ -52,6 +53,49 @@ def collect_files(root: Path | None) -> list[dict[str, Any]]:
         return []
     reader = ExperimentFileReader(root)
     return [reader.file_info(item["path"]) for item in reader.list_files("*")]
+
+
+def collect_lineage(experiment_root: Path) -> dict[str, Any] | None:
+    """Load typed researcher provenance from a generated experiment, when present."""
+
+    path = experiment_root / "lineage.json"
+    if not path.exists():
+        return None
+    try:
+        resolved = path.resolve(strict=True)
+        resolved.relative_to(experiment_root.resolve(strict=True))
+        lineage = ExperimentLineage.model_validate_json(resolved.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValidationError, ValueError) as exc:
+        raise ValueError("experiment lineage is invalid or outside the experiment root") from exc
+    return lineage.model_dump(mode="json")
+
+
+def snapshot_files(
+    root: Path | None,
+    destination: Path,
+    files: list[dict[str, Any]],
+) -> None:
+    """Copy declared experiment inputs into a confined, digest-verified snapshot."""
+
+    if root is None or not files:
+        return
+    reader = ExperimentFileReader(root)
+    destination.mkdir(parents=True, exist_ok=False)
+    resolved_root = root.resolve(strict=True)
+    for item in files:
+        relative = item["path"]
+        verified = reader.file_info(relative)
+        if verified != item:
+            raise RuntimeError(f"experiment input changed while snapshotting: {relative}")
+        logical = PurePosixPath(relative)
+        source = resolved_root.joinpath(*logical.parts).resolve(strict=True)
+        source.relative_to(resolved_root)
+        payload = source.read_bytes()
+        if sha256_bytes(payload) != item["sha256"]:
+            raise RuntimeError(f"experiment input changed while snapshotting: {relative}")
+        target = destination.joinpath(*logical.parts)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(payload)
 
 
 def _read_jsonl_records(
@@ -118,6 +162,10 @@ class RunBundleWriter:
         self._write_json(self.path / "private" / "agent_briefings.json", private_briefings)
         self.files = collect_files(loaded.files_root)
         self._write_json(self.path / "files.json", self.files)
+        snapshot_files(loaded.files_root, self.path / "inputs" / "files", self.files)
+        self.lineage = collect_lineage(loaded.source_path.parent)
+        if self.lineage is not None:
+            self._write_json(self.path / "lineage.json", self.lineage)
         self.manifest: dict[str, Any] = {
             "schema_version": "0.1",
             "run_id": self.run_id,
@@ -179,6 +227,8 @@ class RunBundleWriter:
                 "file_tool_calls": 0,
             },
         }
+        if self.lineage is not None:
+            self.manifest["lineage"] = self.lineage
         self._write_manifest()
 
     @classmethod
@@ -211,6 +261,7 @@ class RunBundleWriter:
         self.path = path
         self.files = files
         self.manifest = manifest
+        self.lineage = manifest.get("lineage")
         posts, soliloquies = self.existing_events(repair_trailing_partial=True)
         stimuli = self.existing_stimuli(repair_trailing_partial=True)
         model_usage = self.existing_model_usage(repair_trailing_partial=True)

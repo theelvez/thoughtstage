@@ -9,8 +9,13 @@ from typing import Annotated
 import typer
 
 from thoughtstage import __version__
+from thoughtstage.bundle_export import (
+    ReproducibilityExportError,
+    export_reproducibility_archive,
+)
 from thoughtstage.config import ExperimentLoadError, load_experiment
 from thoughtstage.engine import ExperimentEngine
+from thoughtstage.integrity import RunIntegrityError, verify_run_bundle
 from thoughtstage.observer import (
     RunBundleNotFoundError,
     RunBundleUnavailableError,
@@ -131,6 +136,52 @@ def usage(
                 "run_id": detail["run_id"],
                 "provider_reported": True,
                 "usage": detail["usage_summary"],
+            },
+            indent=2,
+        )
+    )
+
+
+@app.command("integrity")
+def integrity(
+    bundle: Annotated[Path, typer.Argument(exists=True, file_okay=False, readable=True)],
+) -> None:
+    """Verify hashes, completeness, typed streams, and public/private separation."""
+
+    try:
+        report = verify_run_bundle(bundle)
+    except RunIntegrityError as exc:
+        typer.echo(f"Cannot verify run integrity: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(json.dumps(report.model_dump(mode="json"), indent=2))
+    if not report.valid or not report.complete:
+        raise typer.Exit(code=1)
+
+
+@app.command("export-bundle")
+def export_bundle(
+    bundle: Annotated[Path, typer.Argument(exists=True, file_okay=False, readable=True)],
+    output: Annotated[Path | None, typer.Option("--output", "-o")] = None,
+) -> None:
+    """Export a deterministic, self-verifying researcher-private ZIP archive."""
+
+    target = output or Path(f"thoughtstage-{bundle.resolve().name}-reproducibility.zip")
+    try:
+        report = export_reproducibility_archive(bundle, target)
+    except (RunIntegrityError, ReproducibilityExportError) as exc:
+        typer.echo(f"Cannot export reproducibility bundle: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(
+        json.dumps(
+            {
+                "exported": True,
+                "run_id": report.run_id,
+                "archive": str(target.resolve()),
+                "integrity": {
+                    "valid": report.valid,
+                    "complete": report.complete,
+                    "boundary_valid": report.boundary_valid,
+                },
             },
             indent=2,
         )

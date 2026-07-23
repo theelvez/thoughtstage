@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import AnnotationEditorDialog, {
+  type AnnotationTarget,
+  type AnnotationTargetType,
+  type ResearchAnnotation,
+} from "./AnnotationEditorDialog";
 import "./live-observer.css";
+import ResearchWorkbenchDialog from "./ResearchWorkbenchDialog";
 import RunSummaryDialog from "./RunSummaryDialog";
 
 type Agent = {
@@ -135,6 +141,10 @@ function PostCard({
   revealed,
   newest,
   onToggle,
+  publicAnnotation,
+  privateAnnotation,
+  onAnnotatePublic,
+  onAnnotatePrivate,
 }: {
   post: PublicEvent;
   soliloquy?: Soliloquy;
@@ -143,10 +153,18 @@ function PostCard({
   revealed: boolean;
   newest: boolean;
   onToggle: () => void;
+  publicAnnotation?: ResearchAnnotation;
+  privateAnnotation?: ResearchAnnotation;
+  onAnnotatePublic: () => void;
+  onAnnotatePrivate: () => void;
 }) {
   const stimulus = isStimulus(post);
   return (
-    <article className={`feed-card ${stimulus ? "stimulus" : ""} ${newest ? "newest" : ""}`} style={{ "--agent": color } as React.CSSProperties}>
+    <article
+      id={`event-${post.event_id}`}
+      className={`feed-card ${stimulus ? "stimulus" : ""} ${newest ? "newest" : ""}`}
+      style={{ "--agent": color } as React.CSSProperties}
+    >
       <div className="feed-card-rail" aria-hidden="true" />
       <div className="feed-card-body">
         <header className="post-header">
@@ -158,6 +176,12 @@ function PostCard({
           <span className="post-index">
             Round {String(post.round_number).padStart(2, "0")} · #{String(post.sequence).padStart(2, "0")}
           </span>
+          <button
+            className={`moment-annotation ${publicAnnotation ? "annotated" : ""}`}
+            type="button"
+            onClick={onAnnotatePublic}
+            title={publicAnnotation ? "Edit researcher annotation" : "Bookmark or annotate this public event"}
+          >★</button>
         </header>
 
         <p className="post-content">{post.content}</p>
@@ -188,6 +212,13 @@ function PostCard({
               <span>Researcher channel</span>
               <span>Private · same agent</span>
             </div>
+            <button
+              className={`soliloquy-annotation ${privateAnnotation ? "annotated" : ""}`}
+              type="button"
+              onClick={onAnnotatePrivate}
+            >
+              ★ {privateAnnotation ? "Edit annotation" : "Annotate soliloquy"}
+            </button>
             <p>{soliloquy.content}</p>
           </section>
         )}
@@ -209,6 +240,9 @@ function LiveObserver() {
   const [promptExpanded, setPromptExpanded] = useState(false);
   const [briefingAgentId, setBriefingAgentId] = useState<string | null>(null);
   const [summaryOpen, setSummaryOpen] = useState(false);
+  const [workbenchOpen, setWorkbenchOpen] = useState(false);
+  const [annotations, setAnnotations] = useState<ResearchAnnotation[]>([]);
+  const [annotationTarget, setAnnotationTarget] = useState<AnnotationTarget | null>(null);
   const feedEnd = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -272,9 +306,34 @@ function LiveObserver() {
   }, [selectedRunId]);
 
   useEffect(() => {
+    if (!selectedRunId) {
+      setAnnotations([]);
+      return;
+    }
+    let active = true;
+    const refresh = async () => {
+      try {
+        const response = await fetch(
+          `/api/runs/${encodeURIComponent(selectedRunId)}/annotations`,
+          { cache: "no-store" },
+        );
+        if (!response.ok) return;
+        const payload = (await response.json()) as { annotations: ResearchAnnotation[] };
+        if (active) setAnnotations(payload.annotations);
+      } catch {
+        // Annotation availability must not interrupt the live observer.
+      }
+    };
+    void refresh();
+    return () => { active = false; };
+  }, [selectedRunId]);
+
+  useEffect(() => {
     setPromptExpanded(false);
     setBriefingAgentId(null);
     setSummaryOpen(false);
+    setWorkbenchOpen(false);
+    setAnnotationTarget(null);
   }, [selectedRunId]);
 
   useEffect(() => {
@@ -302,6 +361,15 @@ function LiveObserver() {
     () => new Map((detail?.agents ?? []).map((agent, index) => [agent.id, AGENT_COLORS[index % AGENT_COLORS.length]])),
     [detail?.agents],
   );
+  const annotationsByTarget = useMemo(
+    () => new Map(
+      annotations.map((annotation) => [
+        `${annotation.target_type}:${annotation.target_event_id}`,
+        annotation,
+      ]),
+    ),
+    [annotations],
+  );
 
   const systemPrompt = detail?.experiment.system_prompt?.trim() ?? "";
   const briefingAgent = briefingAgentId ? agents.get(briefingAgentId) : undefined;
@@ -325,6 +393,65 @@ function LiveObserver() {
       return;
     }
     setRevealed(new Set(revealablePosts.map((post) => post.event_id)));
+  };
+
+  const openAnnotation = (
+    type: AnnotationTargetType,
+    eventId: string,
+    label: string,
+    preview: string,
+  ) => {
+    setAnnotationTarget({
+      type,
+      eventId,
+      label,
+      preview,
+      annotation: annotationsByTarget.get(`${type}:${eventId}`),
+    });
+  };
+
+  const targetForAnnotation = (annotation: ResearchAnnotation): AnnotationTarget | null => {
+    if (!detail) return null;
+    if (annotation.target_type === "soliloquy") {
+      const soliloquy = detail.soliloquies.find(
+        (item) => item.event_id === annotation.target_event_id,
+      );
+      const post = soliloquy
+        ? detail.posts.find((item) => item.event_id === soliloquy.post_event_id)
+        : undefined;
+      if (!soliloquy) return null;
+      return {
+        type: "soliloquy",
+        eventId: soliloquy.event_id,
+        label: `${post?.display_name ?? soliloquy.agent_id} · round ${soliloquy.round_number} soliloquy`,
+        preview: soliloquy.content,
+        annotation,
+      };
+    }
+    const event = detail.posts.find((item) => item.event_id === annotation.target_event_id);
+    if (!event) return null;
+    return {
+      type: annotation.target_type,
+      eventId: event.event_id,
+      label: `${event.display_name} · round ${event.round_number} ${annotation.target_type}`,
+      preview: event.content,
+      annotation,
+    };
+  };
+
+  const jumpToEvent = (eventId: string) => {
+    const soliloquy = detail?.soliloquies.find((item) => item.event_id === eventId);
+    const publicEventId = soliloquy?.post_event_id ?? eventId;
+    if (soliloquy) {
+      setRevealed((current) => new Set(current).add(publicEventId));
+    }
+    setWorkbenchOpen(false);
+    window.setTimeout(() => {
+      document.getElementById(`event-${publicEventId}`)?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }, 80);
   };
 
   return (
@@ -366,7 +493,10 @@ function LiveObserver() {
 
         <div className="observer-header-actions">
           {detail?.status === "completed" && (
-            <button className="results-summary-button" type="button" onClick={() => setSummaryOpen(true)}>Experiment results summary</button>
+            <>
+              <button className="workbench-launch" type="button" onClick={() => setWorkbenchOpen(true)}>Research workbench</button>
+              <button className="results-summary-button" type="button" onClick={() => setSummaryOpen(true)}>Experiment results summary</button>
+            </>
           )}
           <a className="builder-launch" href="/?view=builder">+ New experiment</a>
           <div className={`connection-state ${connected ? "connected" : "disconnected"}`}>
@@ -449,25 +579,48 @@ function LiveObserver() {
                 <p>Public posts and their sealed soliloquies will appear here as the run bundle is written.</p>
               </div>
             ) : (
-              posts.map((post) => (
-                <PostCard
-                  key={post.event_id}
-                  post={post}
-                  soliloquy={soliloquies.get(post.event_id)}
-                  agent={isStimulus(post) ? undefined : agents.get(post.agent_id)}
-                  color={isStimulus(post) ? "#9a6814" : colors.get(post.agent_id) ?? AGENT_COLORS[0]}
-                  revealed={revealed.has(post.event_id)}
-                  newest={post.event_id === newestPost?.event_id && detail?.status === "running"}
-                  onToggle={() => {
-                    setRevealed((current) => {
-                      const next = new Set(current);
-                      if (next.has(post.event_id)) next.delete(post.event_id);
-                      else next.add(post.event_id);
-                      return next;
-                    });
-                  }}
-                />
-              ))
+              posts.map((post) => {
+                const soliloquy = soliloquies.get(post.event_id);
+                const targetType: AnnotationTargetType = isStimulus(post) ? "stimulus" : "post";
+                return (
+                  <PostCard
+                    key={post.event_id}
+                    post={post}
+                    soliloquy={soliloquy}
+                    agent={isStimulus(post) ? undefined : agents.get(post.agent_id)}
+                    color={isStimulus(post) ? "#9a6814" : colors.get(post.agent_id) ?? AGENT_COLORS[0]}
+                    revealed={revealed.has(post.event_id)}
+                    newest={post.event_id === newestPost?.event_id && detail?.status === "running"}
+                    publicAnnotation={annotationsByTarget.get(`${targetType}:${post.event_id}`)}
+                    privateAnnotation={soliloquy
+                      ? annotationsByTarget.get(`soliloquy:${soliloquy.event_id}`)
+                      : undefined}
+                    onAnnotatePublic={() => openAnnotation(
+                      targetType,
+                      post.event_id,
+                      `${post.display_name} · round ${post.round_number} ${targetType}`,
+                      post.content,
+                    )}
+                    onAnnotatePrivate={() => {
+                      if (!soliloquy) return;
+                      openAnnotation(
+                        "soliloquy",
+                        soliloquy.event_id,
+                        `${post.display_name} · round ${post.round_number} soliloquy`,
+                        soliloquy.content,
+                      );
+                    }}
+                    onToggle={() => {
+                      setRevealed((current) => {
+                        const next = new Set(current);
+                        if (next.has(post.event_id)) next.delete(post.event_id);
+                        else next.add(post.event_id);
+                        return next;
+                      });
+                    }}
+                  />
+                );
+              })
             )}
             <div ref={feedEnd} />
           </div>
@@ -526,6 +679,42 @@ function LiveObserver() {
 
       {summaryOpen && detail && (
         <RunSummaryDialog detail={detail} onClose={() => setSummaryOpen(false)} />
+      )}
+
+      {workbenchOpen && detail && (
+        <ResearchWorkbenchDialog
+          runId={detail.run_id}
+          runName={detail.experiment.name ?? detail.run_id}
+          runs={runs}
+          annotations={annotations}
+          onClose={() => setWorkbenchOpen(false)}
+          onEditAnnotation={(annotation) => {
+            const target = targetForAnnotation(annotation);
+            if (target) setAnnotationTarget(target);
+          }}
+          onJumpToEvent={jumpToEvent}
+        />
+      )}
+
+      {annotationTarget && detail && (
+        <AnnotationEditorDialog
+          runId={detail.run_id}
+          target={annotationTarget}
+          onClose={() => setAnnotationTarget(null)}
+          onSaved={(annotation) => {
+            setAnnotations((current) => {
+              const without = current.filter(
+                (item) => item.annotation_id !== annotation.annotation_id,
+              );
+              return [...without, annotation];
+            });
+          }}
+          onDeleted={(annotationId) => {
+            setAnnotations((current) => current.filter(
+              (item) => item.annotation_id !== annotationId,
+            ));
+          }}
+        />
       )}
 
       {briefingAgent && briefingContent && (

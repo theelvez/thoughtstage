@@ -118,6 +118,23 @@
   text-transform: uppercase;
 }
 
+.workbench-launch {
+  padding: 10px 12px;
+  border: 1px solid #181815;
+  background: #181815;
+  color: #c8ff36;
+  cursor: pointer;
+  font: 500 9px/1 "DM Mono", monospace;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.workbench-launch:hover {
+  background: #4734d3;
+  border-color: #4734d3;
+  color: #fff;
+}
+
 .builder-launch:hover {
   background: #4734d3;
   border-color: #4734d3;
@@ -441,6 +458,25 @@
   opacity: 0.46;
 }
 
+.moment-annotation {
+  border: 0;
+  padding: 5px;
+  background: transparent;
+  color: rgba(24, 24, 21, 0.23);
+  cursor: pointer;
+  font-size: 17px;
+  line-height: 1;
+}
+
+.moment-annotation:hover,
+.moment-annotation.annotated {
+  color: #4734d3;
+}
+
+.moment-annotation.annotated {
+  text-shadow: 0 0 12px rgba(71, 52, 211, 0.28);
+}
+
 .post-content {
   margin: 22px 0 18px;
   font-size: clamp(16px, 1.35vw, 19px);
@@ -511,6 +547,25 @@
 .soliloquy-label span:last-child {
   color: inherit;
   opacity: 0.5;
+}
+
+.soliloquy-annotation {
+  float: right;
+  margin: 14px 0 0 18px;
+  border: 1px solid rgba(200, 255, 54, 0.36);
+  padding: 7px 9px;
+  background: transparent;
+  color: rgba(200, 255, 54, 0.68);
+  cursor: pointer;
+  font: 500 8px/1 "DM Mono", monospace;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.soliloquy-annotation:hover,
+.soliloquy-annotation.annotated {
+  background: #c8ff36;
+  color: #171725;
 }
 
 .soliloquy-panel p {

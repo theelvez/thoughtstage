@@ -42,6 +42,13 @@ def _run_path(run_id: str, root: Path) -> Path:
     return candidate
 
 
+def resolve_run_bundle_path(run_id: str, *, root: Path | None = None) -> Path:
+    """Resolve one confined run-bundle path for researcher-side operations."""
+
+    runs_root = (root or configured_runs_root()).resolve()
+    return _run_path(run_id, runs_root)
+
+
 def _read_json(path: Path) -> dict[str, Any]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
@@ -107,6 +114,7 @@ def _summary(
         "environment": manifest.get("environment", {}),
         "experiment": manifest.get("experiment", {}),
         "execution": manifest.get("execution", {}),
+        "lineage": manifest.get("lineage"),
         "agents": manifest.get("agents", []),
         "counts": {
             "public_posts": posts,
@@ -121,8 +129,7 @@ def _summary(
 def read_run_bundle(run_id: str, *, root: Path | None = None) -> dict[str, Any]:
     """Return a researcher view of one run's separated event streams."""
 
-    runs_root = (root or configured_runs_root()).resolve()
-    path = _run_path(run_id, runs_root)
+    path = resolve_run_bundle_path(run_id, root=root)
     manifest = _read_json(path / "manifest.json")
     posts = _read_jsonl(path / "public.jsonl")
     stimuli = _read_jsonl(path / "public" / "stimuli.jsonl")

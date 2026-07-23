@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 import tempfile
 from pathlib import Path, PurePosixPath
+from typing import Literal
 
 import yaml
 from pydantic import Field, field_validator, model_validator
@@ -56,19 +58,40 @@ class ExperimentMaterial(StrictModel):
         return self
 
 
+class ExperimentLineage(StrictModel):
+    """Researcher-only provenance for a controlled single-variable clone."""
+
+    schema_version: Literal["0.1"] = "0.1"
+    kind: Literal["single_variable_clone"] = "single_variable_clone"
+    parent_run_id: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+    parent_config_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    change_path: str = Field(min_length=1, max_length=160)
+    before: str | int | float | bool | None
+    after: str | int | float | bool | None
+    administrative_changes: tuple[Literal["id", "name"], ...] = ("id", "name")
+
+
 class ExperimentDraft(StrictModel):
     """A typed wizard submission that can be rendered without guessing."""
 
     experiment: ExperimentConfig
     materials: tuple[ExperimentMaterial, ...] = ()
+    lineage: ExperimentLineage | None = None
 
     @model_validator(mode="after")
     def validate_material_contract(self) -> ExperimentDraft:
         paths = [material.path for material in self.materials]
         if len(paths) != len(set(paths)):
             raise ValueError("material paths must be unique")
-        if self.materials and self.experiment.files_dir != "files":
-            raise ValueError("experiments with wizard materials must declare files_dir: files")
+        if self.materials and self.experiment.files_dir is None:
+            raise ValueError(
+                "experiments with materials must declare files_dir: files "
+                "or another confined directory"
+            )
+        if self.materials:
+            files_dir = PurePosixPath(self.experiment.files_dir or "")
+            if files_dir.is_absolute() or any(part in {"", ".", ".."} for part in files_dir.parts):
+                raise ValueError("files_dir must remain inside the experiment directory")
         if not self.materials and self.experiment.files_dir is not None:
             raise ValueError("files_dir must be omitted when no wizard materials are supplied")
         total = sum(len(material.content.encode("utf-8")) for material in self.materials)
@@ -106,7 +129,10 @@ def render_experiment_yaml(draft: ExperimentDraft) -> str:
 
 def artifact_paths(draft: ExperimentDraft) -> tuple[str, ...]:
     paths = ["experiment.yaml"]
-    paths.extend(f"files/{material.path}" for material in draft.materials)
+    files_dir = draft.experiment.files_dir
+    paths.extend(f"{files_dir}/{material.path}" for material in draft.materials)
+    if draft.lineage is not None:
+        paths.append("lineage.json")
     return tuple(paths)
 
 
@@ -126,8 +152,16 @@ def save_experiment_draft(draft: ExperimentDraft, root: Path) -> Path:
         (temporary / "experiment.yaml").write_text(
             render_experiment_yaml(draft), encoding="utf-8", newline="\n"
         )
+        if draft.lineage is not None:
+            (temporary / "lineage.json").write_text(
+                json.dumps(draft.lineage.model_dump(mode="json"), indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+                newline="\n",
+            )
         if draft.materials:
-            files_root = temporary / "files"
+            files_root = temporary.joinpath(
+                *PurePosixPath(draft.experiment.files_dir or "files").parts
+            )
             for material in draft.materials:
                 destination = files_root.joinpath(*PurePosixPath(material.path).parts)
                 destination.parent.mkdir(parents=True, exist_ok=True)
