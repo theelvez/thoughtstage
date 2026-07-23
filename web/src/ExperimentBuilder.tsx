@@ -108,6 +108,14 @@ function providerParameters(provider: Provider) {
   return {};
 }
 
+async function responsePayload(response: Response): Promise<unknown> {
+  try {
+    return await response.json() as unknown;
+  } catch {
+    return null;
+  }
+}
+
 function errorMessage(payload: unknown, fallback: string) {
   if (typeof payload !== "object" || payload === null || !("detail" in payload)) return fallback;
   const detail = (payload as { detail: unknown }).detail;
@@ -238,7 +246,7 @@ function ExperimentBuilder() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
-        const body = await response.json() as unknown;
+        const body = await responsePayload(response);
         if (!response.ok) throw new Error(errorMessage(body, `Validation failed (${response.status})`));
         if (active) setPreview(body as Preview);
       } catch (reason) {
@@ -296,7 +304,7 @@ function ExperimentBuilder() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    const body = await response.json() as unknown;
+    const body = await responsePayload(response);
     if (!response.ok) throw new Error(errorMessage(body, `Save failed (${response.status})`));
     return body as SaveResult;
   };
@@ -328,7 +336,7 @@ function ExperimentBuilder() {
         `/api/experiments/${encodeURIComponent(experiment.experiment_id)}/launch`,
         { method: "POST" },
       );
-      const body = await response.json() as unknown;
+      const body = await responsePayload(response);
       if (!response.ok) throw new Error(errorMessage(body, `Launch failed (${response.status})`));
       const result = body as LaunchResult;
       setLaunchResult(result);
