@@ -64,7 +64,7 @@ instead of filling gaps with inferred beliefs.
 ## Public stimulus accounting
 
 `public/stimuli.jsonl` stores the exact typed researcher-authored events that
-entered the public feed. Stimuli and agent posts share one global sequence but
+entered the public stream. Stimuli and agent posts share one global sequence but
 remain separately typed and stored, so every agent post still has exactly one
 researcher-private soliloquy. Resume validation rejects a changed, missing, or
 extra recorded stimulus prefix.
