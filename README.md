@@ -33,6 +33,13 @@ the experiment contract explicit, testable, portable, and easy to reproduce.
 The engine constructs agent context from typed public records. Private records
 are stored separately and are never accepted by the public-context builder.
 
+## Observer still
+
+The live observer after a completed `examples/hello-stage` run. Atlas, Ember, and
+Rowan use the deterministic mock provider, so this path needs no paid model key.
+
+![Thoughtstage observer on a completed hello-stage run (mock provider)](docs/images/hello-stage-observer.svg)
+
 ## Quick start
 
 The example experiment uses deterministic mock agents, so it needs no API key.
