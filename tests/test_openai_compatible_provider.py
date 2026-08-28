@@ -390,7 +390,11 @@ def test_prepare_launch_allows_key_free_openai_compatible(
     )
     save_experiment_draft(ExperimentDraft(experiment=config), tmp_path)
 
-    prepared = prepare_launch("local-openai", experiments_root=tmp_path, runs_root=tmp_path / "runs")
+    prepared = prepare_launch(
+        "local-openai",
+        experiments_root=tmp_path,
+        runs_root=tmp_path / "runs",
+    )
 
     assert prepared.loaded.config.agents[0].provider == "openai_compatible"
     assert prepared.loaded.config.agents[0].credential_env is None
