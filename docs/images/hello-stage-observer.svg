@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-label="Thoughtstage observer on a completed hello-stage run using the mock provider">
+  <rect width="1200" height="720" fill="#e9e6dc"/>
+  <rect width="1200" height="72" fill="#f5f2e9"/>
+  <line x1="0" y1="72" x2="1200" y2="72" stroke="rgba(24,24,21,0.2)"/>
+  <rect x="24" y="17" width="38" height="38" fill="#181815"/>
+  <text x="43" y="41" text-anchor="middle" fill="#c8ff36" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" font-weight="500">TS</text>
+  <text x="74" y="34" fill="#181815" font-family="Manrope, system-ui, sans-serif" font-size="15" font-weight="700">Thoughtstage</text>
+  <text x="74" y="50" fill="rgba(24,24,21,0.54)" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="10" letter-spacing="0.08em">LIVE OBSERVER</text>
+  <rect x="390" y="20" width="360" height="32" fill="#fffdf6" stroke="rgba(24,24,21,0.25)"/>
+  <text x="404" y="40" fill="#181815" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12">Hello, Stage · completed</text>
+  <rect x="860" y="22" width="168" height="28" fill="#181815"/>
+  <text x="944" y="40" text-anchor="middle" fill="#c8ff36" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="9" letter-spacing="0.04em">RESEARCH WORKBENCH</text>
+  <circle cx="1058" cy="36" r="4" fill="#477018"/>
+  <text x="1068" y="40" fill="#477018" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="10">OBSERVER CONNECTED</text>
+  <rect y="72" width="1200" height="96" fill="#f5f2e9"/>
+  <line x1="0" y1="168" x2="1200" y2="168" stroke="#181815"/>
+  <circle cx="40" cy="96" r="3" fill="#615e56"/>
+  <text x="52" y="100" fill="#615e56" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="10" letter-spacing="0.06em">COMPLETED</text>
+  <text x="28" y="132" fill="#181815" font-family="Manrope, system-ui, sans-serif" font-size="36" font-weight="600" letter-spacing="-0.04em">Hello, Stage</text>
+  <text x="28" y="152" fill="rgba(24,24,21,0.5)" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="10" letter-spacing="0.06em">SIMULTANEOUS SCHEDULE · MOCK PROVIDER · NO API KEY</text>
+  <text x="760" y="118" fill="#181815" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="24">02 / 02</text>
+  <text x="760" y="136" fill="rgba(24,24,21,0.48)" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="9">ROUNDS</text>
+  <text x="870" y="118" fill="#181815" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="24">6 / 6</text>
+  <text x="870" y="136" fill="rgba(24,24,21,0.48)" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="9">TURNS</text>
+  <text x="960" y="118" fill="#181815" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="24">6</text>
+  <text x="960" y="136" fill="rgba(24,24,21,0.48)" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="9">PRIVATE</text>
+  <text x="1040" y="118" fill="#181815" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="24">0</text>
+  <text x="1040" y="136" fill="rgba(24,24,21,0.48)" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="9">MODEL CALLS</text>
+  <rect y="165" width="1200" height="3" fill="rgba(24,24,21,0.12)"/>
+  <rect y="165" width="1200" height="3" fill="#4734d3"/>
+  <rect y="168" width="880" height="54" fill="#e9e6dc"/>
+  <line x1="0" y1="222" x2="880" y2="222" stroke="rgba(24,24,21,0.18)"/>
+  <text x="28" y="188" fill="rgba(24,24,21,0.46)" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="9" letter-spacing="0.06em">SHARED SYSTEM PROMPT</text>
+  <text x="28" y="206" fill="#181815" font-family="Manrope, system-ui, sans-serif" font-size="13" font-weight="600">Visible to every agent</text>
+  <text x="220" y="200" fill="rgba(24,24,21,0.68)" font-family="Manrope, system-ui, sans-serif" font-size="11">Work with the group to define a useful, falsifiable next step.</text>
+  <rect x="48" y="238" width="784" height="108" fill="#f8f5ed" stroke="rgba(24,24,21,0.24)"/>
+  <rect x="48" y="238" width="4" height="108" fill="#4734d3"/>
+  <circle cx="86" cy="266" r="19" fill="#ece8fb"/>
+  <text x="86" y="271" text-anchor="middle" fill="#4734d3" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" font-weight="600">A</text>
+  <text x="114" y="264" fill="#4734d3" font-family="Manrope, system-ui, sans-serif" font-size="13" font-weight="600">Atlas</text>
+  <text x="114" y="278" fill="rgba(24,24,21,0.45)" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="10">deterministic-v1</text>
+  <text x="790" y="268" text-anchor="end" fill="rgba(24,24,21,0.46)" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="10">ROUND 01 · #01</text>
+  <text x="70" y="314" fill="#181815" font-family="Manrope, system-ui, sans-serif" font-size="16">I suggest we identify the smallest useful experiment. What evidence would change our minds?</text>
+  <rect x="48" y="358" width="784" height="108" fill="#f8f5ed" stroke="rgba(24,24,21,0.24)"/>
+  <rect x="48" y="358" width="4" height="108" fill="#dd5f39"/>
+  <circle cx="86" cy="386" r="19" fill="#f8e6df"/>
+  <text x="86" y="391" text-anchor="middle" fill="#dd5f39" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" font-weight="600">E</text>
+  <text x="114" y="384" fill="#dd5f39" font-family="Manrope, system-ui, sans-serif" font-size="13" font-weight="600">Ember</text>
+  <text x="114" y="398" fill="rgba(24,24,21,0.45)" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="10">deterministic-v1</text>
+  <text x="790" y="388" text-anchor="end" fill="rgba(24,24,21,0.46)" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="10">ROUND 01 · #02</text>
+  <text x="70" y="434" fill="#181815" font-family="Manrope, system-ui, sans-serif" font-size="16">I suggest we make disagreement legible. What evidence would change our minds?</text>
+  <rect x="48" y="478" width="784" height="220" fill="#f8f5ed" stroke="#4734d3"/>
+  <rect x="48" y="478" width="4" height="220" fill="#4734d3"/>
+  <circle cx="86" cy="506" r="19" fill="#ece8fb"/>
+  <text x="86" y="511" text-anchor="middle" fill="#4734d3" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" font-weight="600">A</text>
+  <text x="114" y="504" fill="#4734d3" font-family="Manrope, system-ui, sans-serif" font-size="13" font-weight="600">Atlas</text>
+  <text x="114" y="518" fill="rgba(24,24,21,0.45)" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="10">deterministic-v1</text>
+  <text x="790" y="508" text-anchor="end" fill="rgba(24,24,21,0.46)" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="10">ROUND 02 · #04</text>
+  <text x="70" y="554" fill="#181815" font-family="Manrope, system-ui, sans-serif" font-size="16">I suggest we invite a falsifiable next step. What evidence would change our minds?</text>
+  <text x="70" y="580" fill="#181815" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="10" letter-spacing="0.05em">●  CLOSE BACKSTAGE</text>
+  <rect x="52" y="594" width="776" height="100" fill="#171725"/>
+  <text x="76" y="618" fill="#c8ff36" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="10" letter-spacing="0.06em">RESEARCHER CHANNEL</text>
+  <text x="780" y="618" text-anchor="end" fill="rgba(245,242,233,0.5)" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="10">PRIVATE · SAME AGENT</text>
+  <text x="76" y="652" fill="#f6f2e8" font-family="Newsreader, Georgia, serif" font-size="16" font-style="italic">I want Atlas's contribution to be concrete without dominating.</text>
+  <text x="76" y="674" fill="#f6f2e8" font-family="Newsreader, Georgia, serif" font-size="16" font-style="italic">The public feed currently contains posts from Atlas, Ember, Rowan.</text>
+  <rect x="880" y="168" width="320" height="552" fill="#171725"/>
+  <text x="902" y="196" fill="#c8ff36" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="10" letter-spacing="0.06em">RESEARCH CHANNEL</text>
+  <text x="902" y="220" fill="#f5f2e9" font-family="Manrope, system-ui, sans-serif" font-size="20" font-weight="600">Participants</text>
+  <text x="902" y="242" fill="rgba(245,242,233,0.5)" font-family="Manrope, system-ui, sans-serif" font-size="12">Model bindings are visible here only to the researcher.</text>
+  <rect x="902" y="262" width="276" height="72" fill="rgba(71,52,211,0.09)" stroke="#4734d3"/>
+  <circle cx="930" cy="290" r="16" fill="#312a63"/>
+  <text x="930" y="295" text-anchor="middle" fill="#4734d3" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12">A</text>
+  <text x="956" y="288" fill="#8b82e6" font-family="Manrope, system-ui, sans-serif" font-size="12" font-weight="600">Atlas</text>
+  <text x="956" y="304" fill="rgba(245,242,233,0.5)" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="10">deterministic-v1</text>
+  <text x="1158" y="288" text-anchor="end" fill="#f5f2e9" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15">2</text>
+  <text x="1158" y="304" text-anchor="end" fill="rgba(245,242,233,0.4)" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="9">TURNS</text>
+  <text x="956" y="322" fill="#c8ff36" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="9">LAST SEEN R2</text>
+  <rect x="902" y="344" width="276" height="58" fill="transparent" stroke="rgba(245,242,233,0.14)"/>
+  <circle cx="930" cy="373" r="16" fill="#4a281c"/>
+  <text x="930" y="378" text-anchor="middle" fill="#dd5f39" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12">E</text>
+  <text x="956" y="370" fill="#dd5f39" font-family="Manrope, system-ui, sans-serif" font-size="12" font-weight="600">Ember</text>
+  <text x="956" y="386" fill="rgba(245,242,233,0.5)" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="10">deterministic-v1</text>
+  <text x="1158" y="370" text-anchor="end" fill="#f5f2e9" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15">2</text>
+  <text x="1158" y="386" text-anchor="end" fill="rgba(245,242,233,0.4)" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="9">TURNS</text>
+  <rect x="902" y="412" width="276" height="58" fill="transparent" stroke="rgba(245,242,233,0.14)"/>
+  <circle cx="930" cy="441" r="16" fill="#16332f"/>
+  <text x="930" y="446" text-anchor="middle" fill="#26766c" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12">R</text>
+  <text x="956" y="438" fill="#4aa99c" font-family="Manrope, system-ui, sans-serif" font-size="12" font-weight="600">Rowan</text>
+  <text x="956" y="454" fill="rgba(245,242,233,0.5)" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="10">deterministic-v1</text>
+  <text x="1158" y="438" text-anchor="end" fill="#f5f2e9" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15">2</text>
+  <text x="1158" y="454" text-anchor="end" fill="rgba(245,242,233,0.4)" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="9">TURNS</text>
+  <text x="902" y="510" fill="#c8ff36" font-family="Manrope, system-ui, sans-serif" font-size="16">◆</text>
+  <text x="922" y="510" fill="#f5f2e9" font-family="Manrope, system-ui, sans-serif" font-size="12" font-weight="600">Backstage is sealed</text>
+  <text x="902" y="532" fill="rgba(245,242,233,0.45)" font-family="Manrope, system-ui, sans-serif" font-size="11">Soliloquies are shown to you, never placed in another agent's context.</text>
+</svg>
