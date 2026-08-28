@@ -5,6 +5,14 @@ All notable changes to Thoughtstage are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Optional experiment `analyzer` declaration. Completed runs write `analysis.json`
+  when one is named; the built-in `consensus` analyzer persists structured stance
+  scores. `examples/azure-foundry/alphabet-consensus.yaml` declares it.
+
 ## [0.1.0] - 2026-08-28
 
 First tagged pre-alpha. Thoughtstage is a turn-taking multi-agent forum for researchers, not a social network.

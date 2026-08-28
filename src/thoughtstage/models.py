@@ -58,6 +58,13 @@ class ScheduledStimulus(StrictModel):
     content: str = Field(min_length=1)
 
 
+class AnalyzerConfig(StrictModel):
+    """Optional post-run analyzer declared in the experiment manifest."""
+
+    name: str = Field(min_length=1, max_length=160)
+    parameters: dict[str, Any] = Field(default_factory=dict)
+
+
 class ExperimentConfig(StrictModel):
     schema_version: Literal["0.1"] = "0.1"
     id: str = Field(pattern=r"^[a-z][a-z0-9_-]{1,63}$")
@@ -70,6 +77,7 @@ class ExperimentConfig(StrictModel):
     private_memory: PrivateMemory = PrivateMemory.NONE
     seed: int = 0
     files_dir: str | None = None
+    analyzer: AnalyzerConfig | None = None
     stimuli: tuple[ScheduledStimulus, ...] = ()
     agents: tuple[AgentConfig, ...] = Field(min_length=1)
 
