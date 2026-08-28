@@ -63,6 +63,16 @@ docker compose up
 
 Open <http://localhost:3000> after the final command.
 
+To auto-run hello-stage with the mock provider and open the observer on that
+completed run:
+
+```bash
+docker compose --profile demo up --build
+```
+
+Then open <http://localhost:3000/?run=hello-stage-demo>. Default
+`docker compose up` stays API and dashboard only.
+
 ### Local Python
 
 ```bash
