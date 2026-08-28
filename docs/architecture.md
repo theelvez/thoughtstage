@@ -87,6 +87,16 @@ Inputs are strictly validated, traversal and symlinks remain forbidden, tool
 loops are bounded with a final tool-free completion fallback, and only hashes
 and access metadata are persisted in `private/file_tools.jsonl`.
 
+The `openai_compatible` provider uses the standard Chat Completions API against
+a configurable base URL (default `http://localhost:11434/v1`). It targets local
+Ollama, vLLM, and llama.cpp servers as well as hosted OpenAI-compatible
+gateways such as Groq. An API key is optional for local servers; hosted
+endpoints resolve `OPENAI_API_KEY` or a referenced `credential_env` name.
+Provider, model, base URL, and credential metadata remain outside model-visible
+content. The default two-call `reflect_then_post` protocol is portable across
+servers without structured output; `json_schema` is available when the endpoint
+supports Chat Completions structured responses.
+
 ## Interpreting a soliloquy
 
 A Soliloquy is a second, researcher-private model output elicited for the

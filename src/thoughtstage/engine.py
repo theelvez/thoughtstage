@@ -27,6 +27,7 @@ from thoughtstage.providers.azure_foundry import AzureFoundryProvider
 from thoughtstage.providers.base import Provider
 from thoughtstage.providers.bedrock import BedrockProvider
 from thoughtstage.providers.mock import MockProvider
+from thoughtstage.providers.openai_compatible import OpenAICompatibleProvider
 from thoughtstage.reproducibility import RunBundleResumeError, RunBundleWriter
 
 
@@ -40,6 +41,7 @@ class ExperimentEngine:
             "azure_foundry": AzureFoundryProvider(),
             "bedrock": BedrockProvider(),
             "mock": MockProvider(),
+            "openai_compatible": OpenAICompatibleProvider(),
         }
         if providers:
             self.providers.update(providers)

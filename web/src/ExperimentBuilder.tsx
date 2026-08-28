@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import "./experiment-builder.css";
 import ParticipantRosterSetup, { type GeneratedParticipant } from "./ParticipantRosterSetup";
 
-type Provider = "mock" | "azure_foundry" | "bedrock";
+type Provider = "mock" | "azure_foundry" | "bedrock" | "openai_compatible";
 
 type AgentDraft = {
   key: number;
@@ -81,12 +81,18 @@ const providerModels: Record<Provider, readonly { value: string; label: string }
       label: "Mistral Large 3 675B Instruct",
     },
   ],
+  openai_compatible: [
+    { value: "llama3.2", label: "Llama 3.2 · Ollama local default" },
+    { value: "gpt-4o-mini", label: "GPT-4o mini · OpenAI API" },
+    { value: "llama-3.3-70b-versatile", label: "Llama 3.3 70B Versatile · Groq" },
+  ],
 };
 
 const providerModelHelp: Record<Provider, string> = {
   mock: "Built-in key-free models.",
   azure_foundry: "Known Thoughtstage deployments. You may enter your own deployment name.",
   bedrock: "Known Bedrock model and inference-profile IDs. You may enter another ID.",
+  openai_compatible: "Local Ollama/vLLM/llama.cpp tags or hosted Chat Completions model IDs.",
 };
 
 const providerDefaults: Record<Provider, { model: string; credentialEnv: string }> = {
@@ -96,6 +102,7 @@ const providerDefaults: Record<Provider, { model: string; credentialEnv: string 
     model: providerModels.bedrock[0].value,
     credentialEnv: "THOUGHTSTAGE_AWS_PROFILE",
   },
+  openai_compatible: { model: providerModels.openai_compatible[0].value, credentialEnv: "" },
 };
 
 function slugify(value: string) {
@@ -144,6 +151,12 @@ function providerParameters(provider: Provider) {
       private_max_output_tokens: 400,
       public_max_output_tokens: 400,
       max_attempts: 5,
+    };
+  }
+  if (provider === "openai_compatible") {
+    return {
+      base_url_env: "OPENAI_BASE_URL",
+      output_mode: "reflect_then_post",
     };
   }
   return {};
@@ -490,7 +503,7 @@ function ExperimentBuilder() {
                     <div className="field-row thirds">
                       <label className="field"><span>Display name</span><input value={agent.displayName} onChange={(event) => updateAgent(agent.key, { displayName: event.target.value })} /></label>
                       <label className="field"><span>Participant ID</span><input value={agent.id} onChange={(event) => updateAgent(agent.key, { id: event.target.value.toLowerCase() })} /></label>
-                      <label className="field"><span>Provider</span><select value={agent.provider} onChange={(event) => changeProvider(agent.key, event.target.value as Provider)}><option value="mock">Mock · no cost</option><option value="azure_foundry">Microsoft Foundry</option><option value="bedrock">Amazon Bedrock</option></select></label>
+                      <label className="field"><span>Provider</span><select value={agent.provider} onChange={(event) => changeProvider(agent.key, event.target.value as Provider)}><option value="mock">Mock · no cost</option><option value="azure_foundry">Microsoft Foundry</option><option value="bedrock">Amazon Bedrock</option><option value="openai_compatible">OpenAI-compatible</option></select></label>
                     </div>
                     <div className="field-row">
                       <label className="field">

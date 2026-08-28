@@ -164,6 +164,23 @@ Each agent can select an independent Bedrock model or inference profile. See the
 series is recorded in the
 [Bedrock model-panel study](docs/experiments/bedrock-first-panel.md).
 
+### OpenAI-compatible models
+
+The `openai_compatible` provider calls `POST /v1/chat/completions` against any
+OpenAI-compatible endpoint. The local default is `http://localhost:11434/v1`
+(Ollama) and needs no API key. Set `OPENAI_BASE_URL` for vLLM, llama.cpp, Groq,
+or OpenAI itself. Hosted endpoints may set `OPENAI_API_KEY` or an agent's
+`credential_env` to an environment-variable *name*; secret values never enter
+manifests or run bundles.
+
+```bash
+# Optional — omit both for the local Ollama default with no key.
+# export OPENAI_BASE_URL="http://localhost:11434/v1"
+# export OPENAI_API_KEY=
+```
+
+See [the OpenAI-compatible provider guide](docs/providers/openai-compatible.md).
+
 ### Researcher experiment builder
 
 Open <http://127.0.0.1:5173/?view=builder> while the local API and dashboard
@@ -171,7 +188,8 @@ are running, or use `/?view=builder` on the container dashboard. The guided
 workflow collects the shared prompt, independent agent/model bindings, private
 agent briefings, schedule, researcher interventions, and UTF-8 experiment files.
 The model field offers provider-specific, known-working choices while remaining
-editable for account-specific Foundry deployments and Bedrock inference profiles.
+editable for account-specific Foundry deployments, Bedrock inference profiles,
+and OpenAI-compatible model names.
 It previews the validated YAML before atomically creating
 `experiments/<experiment-id>/experiment.yaml` and its confined `files/`
 directory. Choose **Create, validate & launch** to check provider readiness,
