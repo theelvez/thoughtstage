@@ -140,3 +140,97 @@ function formatTokens(value: number) {
     maximumFractionDigits: 1,
   }).format(value);
 }
+
+function PostCard({
+  post,
+  soliloquy,
+  agent,
+  color,
+  revealed,
+  newest,
+  onToggle,
+  publicAnnotation,
+  privateAnnotation,
+  onAnnotatePublic,
+  onAnnotatePrivate,
+}: {
+  post: PublicEvent;
+  soliloquy?: Soliloquy;
+  agent?: Agent;
+  color: string;
+  revealed: boolean;
+  newest: boolean;
+  onToggle: () => void;
+  publicAnnotation?: ResearchAnnotation;
+  privateAnnotation?: ResearchAnnotation;
+  onAnnotatePublic: () => void;
+  onAnnotatePrivate: () => void;
+}) {
+  const stimulus = isStimulus(post);
+  return (
+    <article
+      id={`event-${post.event_id}`}
+      className={`feed-card ${stimulus ? "stimulus" : ""} ${newest ? "newest" : ""}`}
+      style={{ "--agent": color } as React.CSSProperties}
+    >
+      <div className="feed-card-rail" aria-hidden="true" />
+      <div className="feed-card-body">
+        <header className="post-header">
+          <span className="agent-avatar">{stimulus ? "\u25c6" : post.display_name.charAt(0).toUpperCase()}</span>
+          <span className="post-byline">
+            <strong>{post.display_name}</strong>
+            <small>{stimulus ? "scripted public stimulus" : agent ? shortModel(agent.model) : "participant"}</small>
+          </span>
+          <span className="post-index">
+            Round {String(post.round_number).padStart(2, "0")} \u00b7 #{String(post.sequence).padStart(2, "0")}
+          </span>
+          <button
+            className={`moment-annotation ${publicAnnotation ? "annotated" : ""}`}
+            type="button"
+            onClick={onAnnotatePublic}
+            title={publicAnnotation ? "Edit researcher annotation" : "Bookmark or annotate this public event"}
+          >\u2605</button>
+        </header>
+
+        <p className="post-content">{post.content}</p>
+
+        {stimulus ? (
+          <div className="stimulus-note">Declared in the experiment manifest \u00b7 visible to every participant</div>
+        ) : (
+          <button
+            className={`soliloquy-toggle ${revealed ? "open" : ""}`}
+            type="button"
+            disabled={!soliloquy}
+            aria-expanded={revealed}
+            onClick={onToggle}
+          >
+            <span className="lock-dot" aria-hidden="true" />
+            {!soliloquy
+              ? "Soliloquy pending"
+              : revealed
+                ? "Close backstage"
+                : "Open soliloquy"}
+            {soliloquy && <span aria-hidden="true">{revealed ? "\u2212" : "+"}</span>}
+          </button>
+        )}
+
+        {revealed && soliloquy && (
+          <section className="soliloquy-panel" aria-label={`${post.display_name} private soliloquy`}>
+            <div className="soliloquy-label">
+              <span>Researcher channel</span>
+              <span>Private \u00b7 same agent</span>
+            </div>
+            <button
+              className={`soliloquy-annotation ${privateAnnotation ? "annotated" : ""}`}
+              type="button"
+              onClick={onAnnotatePrivate}
+            >
+              \u2605 {privateAnnotation ? "Edit annotation" : "Annotate soliloquy"}
+            </button>
+            <p>{soliloquy.content}</p>
+          </section>
+        )}
+      </div>
+    </article>
+  );
+}
