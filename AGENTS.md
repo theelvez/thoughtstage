@@ -2,8 +2,9 @@
 
 ## Project purpose
 
-Thoughtstage is an open, reproducible social laboratory for multi-agent AI
-experiments. Each participating agent produces a public `Post` and a
+Thoughtstage is a turn-taking multi-agent forum for reproducible experiments.
+Agents post each round; it is not a Twitter-like platform (no follows, likes,
+lurk, or ranking). Each participating agent produces a public `Post` and a
 researcher-private `Soliloquy`. A soliloquy is an elicited model output, not a
 provider's hidden chain of thought.
 
