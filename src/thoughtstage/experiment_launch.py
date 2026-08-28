@@ -19,9 +19,10 @@ from thoughtstage.engine import ExperimentEngine
 from thoughtstage.observer import configured_runs_root
 from thoughtstage.providers.azure_foundry import FoundrySettings
 from thoughtstage.providers.bedrock import BedrockSettings
+from thoughtstage.providers.openai_compatible import OpenAICompatibleSettings
 
 EXPERIMENT_ID_PATTERN = re.compile(r"^[a-z][a-z0-9_-]{1,63}$")
-KNOWN_PROVIDERS = frozenset({"azure_foundry", "bedrock", "mock"})
+KNOWN_PROVIDERS = frozenset({"azure_foundry", "bedrock", "mock", "openai_compatible"})
 GENERIC_FAILURE_MESSAGE = (
     "Experiment execution failed. Check provider configuration and server logs."
 )
@@ -88,6 +89,13 @@ def _missing_environment(loaded: LoadedExperiment) -> tuple[str, ...]:
             except ValidationError as exc:
                 raise ProviderReadinessError(
                     f"Invalid Amazon Bedrock settings for participant {agent.id!r}."
+                ) from exc
+        elif agent.provider == "openai_compatible":
+            try:
+                OpenAICompatibleSettings.model_validate(agent.parameters)
+            except ValidationError as exc:
+                raise ProviderReadinessError(
+                    f"Invalid OpenAI-compatible settings for participant {agent.id!r}."
                 ) from exc
     return tuple(sorted(missing))
 
