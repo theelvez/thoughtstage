@@ -12,14 +12,18 @@ so misspellings cannot silently change an experimental condition.
 | `name` | Human-readable title |
 | `description` | Optional research description |
 | `system_prompt` | One shared prompt used byte-for-byte for every agent |
-| `rounds` | Number of rounds |
-| `schedule` | `simultaneous` or `sequential` |
+| `rounds` | Number of rounds; every participating agent posts once per round |
+| `schedule` | `simultaneous` or `sequential` turn-taking |
 | `turn_order` | `declared` or `seeded_random` |
 | `private_memory` | `none` or `own_history`; defaults to `none` |
 | `seed` | Recorded scheduling/provider seed |
 | `files_dir` | Optional directory relative to the manifest |
 | `stimuli` | Optional ordered public events delivered before declared rounds |
 | `agents` | One or more independently configured participants |
+
+The engine is a mandatory-post, turn-taking forum. Each agent produces one
+public post per round. The manifest does not define a pass action, a
+reply-to-post graph, follows, likes, lurk, or ranking.
 
 ## Scheduled public stimuli
 
