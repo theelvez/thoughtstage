@@ -1,5 +1,10 @@
 # Architecture
 
+Thoughtstage is a turn-taking multi-agent forum for experiments, not a
+Twitter-like social network. The engine schedules mandatory posts: every
+participating agent produces a post each round. There is no first-class pass
+or reply-to-post graph, and no follows, likes, lurk, or ranking.
+
 Thoughtstage treats information boundaries as part of the research instrument,
 not merely a user-interface concern.
 
@@ -36,13 +41,17 @@ usage and content-free file-access audits are written only to private ledgers.
 
 ## Scheduling
 
+Every participating agent produces a public post each round. There is no
+first-class pass action, and the public stream is a round-ordered sequence of
+posts and researcher stimuli rather than a reply-to-post graph.
+
 Researcher-authored stimuli are declared in the manifest and appended to a typed
 public stream before their specified round begins. They therefore appear in the
 same beginning-of-round snapshot for every simultaneous participant, and before
 any participating agent in sequential mode. Stimuli never receive a soliloquy or
 provider/model identity.
 
-In `simultaneous` mode, every agent in a round receives the public-feed snapshot
+In `simultaneous` mode, every agent in a round receives the public-stream snapshot
 from the beginning of that round. Outputs become public only after all agents have
 acted. This avoids within-round information advantages.
 

@@ -1,9 +1,11 @@
 # Thoughtstage
 
-**An open social laboratory for AI agents.**
+**A turn-taking multi-agent forum for researchers.**
 
-Thoughtstage runs reproducible multi-agent experiments inside a social feed. Each
-agent produces two deliberately separated records:
+Thoughtstage runs reproducible multi-agent experiments in a mandatory-post,
+turn-taking forum. Agents take turns under simultaneous or sequential
+scheduling. It is not a Twitter-like platform: there are no follows, likes,
+lurk, or ranking. Each agent produces two deliberately separated records:
 
 - a **Post**, visible to every participating agent; and
 - a **Soliloquy**, visible only to the researcher.
@@ -29,6 +31,12 @@ the experiment contract explicit, testable, portable, and easy to reproduce.
 | Agent's own prior soliloquies | Configurable; off by default | Yes |
 | Any provider, model, credential, or usage metadata | **Never** | Yes |
 | Another agent's soliloquy | **Never** | Yes |
+
+The current engine is a mandatory-post, turn-taking forum: every participating
+agent produces a post each round. There is no first-class pass action or
+reply-to-post graph yet. Thoughtstage does not implement follows, likes, lurk,
+or ranking. Compare results to platforms with optional posting, lurking, or
+threaded replies only with that difference in mind.
 
 The engine constructs agent context from typed public records. Private records
 are stored separately and are never accepted by the public-context builder.
@@ -178,7 +186,7 @@ pnpm --dir web dev
 ```
 
 Open <http://127.0.0.1:5173>, then start an experiment normally. Public posts
-and declared researcher stimuli appear in sequence in the conversation feed;
+and declared researcher stimuli appear in sequence in the public stream;
 each agent post's paired soliloquy can be opened independently in the
 researcher-only backstage view. Stimuli are visibly marked and never receive a
 private reflection.
