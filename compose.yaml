@@ -28,4 +28,23 @@ services:
     depends_on:
       api:
         condition: service_healthy
+      demo:
+        condition: service_completed_successfully
+        required: false
     restart: unless-stopped
+
+  demo:
+    profiles:
+      - demo
+    image: thoughtstage-api:local
+    build:
+      context: .
+    volumes:
+      - ./runs:/workspace/runs:Z
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: "no"
+    command:
+      - python
+      - examples/hello-stage/run_compose_demo.py
