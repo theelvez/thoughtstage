@@ -33,3 +33,15 @@ from thoughtstage.reproducibility import RunBundleResumeError, RunBundleWriter
 
 class UnknownProviderError(ValueError):
     pass
+
+
+class ExperimentEngine:
+    def __init__(self, providers: Mapping[str, Provider] | None = None) -> None:
+        self.providers: dict[str, Provider] = {
+            "azure_foundry": AzureFoundryProvider(),
+            "bedrock": BedrockProvider(),
+            "mock": MockProvider(),
+            "openai_compatible": OpenAICompatibleProvider(),
+        }
+        if providers:
+            self.providers.update(providers)
