@@ -293,6 +293,7 @@ class OpenAICompatibleProvider:
             )
         )
         soliloquy = _completion_text(private_response)
+        private_usage = _model_call_usage(private_response, "private")
 
         public_instructions = (
             f"{context.system_prompt}\n\n"
@@ -309,7 +310,6 @@ class OpenAICompatibleProvider:
                 max_output_tokens=settings.public_max_output_tokens,
             )
         )
-        private_usage = _model_call_usage(private_response, "private")
         public_usage = _model_call_usage(public_response, "public")
         return ProviderResult(
             output=ModelOutput(post=_completion_text(public_response), soliloquy=soliloquy),
