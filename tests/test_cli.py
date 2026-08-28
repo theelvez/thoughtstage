@@ -46,6 +46,26 @@ def test_run_command_writes_bundle(experiment_file: Path, tmp_path: Path) -> Non
     assert '"provider_reported": true' in usage_result.stdout
     assert '"model_calls": 0' in usage_result.stdout
 
+    integrity_result = runner.invoke(
+        app,
+        ["integrity", str(tmp_path / "runs" / "cli-run")],
+    )
+    assert integrity_result.exit_code == 0
+    assert '"boundary_valid": true' in integrity_result.stdout
+
+    archive_path = tmp_path / "exports" / "cli-run.zip"
+    export_result = runner.invoke(
+        app,
+        [
+            "export-bundle",
+            str(tmp_path / "runs" / "cli-run"),
+            "--output",
+            str(archive_path),
+        ],
+    )
+    assert export_result.exit_code == 0
+    assert archive_path.read_bytes().startswith(b"PK")
+
 
 def test_validate_reports_invalid_manifest(tmp_path: Path) -> None:
     manifest = tmp_path / "invalid.yaml"

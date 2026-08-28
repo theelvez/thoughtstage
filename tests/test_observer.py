@@ -26,8 +26,20 @@ def _make_live_bundle(root: Path, run_id: str = "live-run") -> Path:
             "status": "running",
             "created_at": "2026-07-21T12:00:00+00:00",
             "completed_at": None,
-            "experiment": {"id": "observer-test", "name": "Observer Test"},
-            "execution": {"rounds": 8, "schedule": "sequential"},
+            "failure": None,
+            "thoughtstage": {"version": "0.1.0", "source_revision": "abc123"},
+            "environment": {"python": "3.14.2", "platform": "test-platform"},
+            "experiment": {
+                "id": "observer-test",
+                "name": "Observer Test",
+                "system_prompt": "Reach one evidence-backed decision.",
+                "config_sha256": "0" * 64,
+            },
+            "execution": {
+                "rounds": 8,
+                "schedule": "sequential",
+                "seed": 42,
+            },
             "agents": [
                 {
                     "id": "atlas",
@@ -60,6 +72,10 @@ def _make_live_bundle(root: Path, run_id: str = "live-run") -> Path:
     (bundle / "public.jsonl").write_text(json.dumps(post) + "\n", encoding="utf-8")
     (bundle / "private" / "soliloquies.jsonl").write_text(
         json.dumps(soliloquy) + "\n{partial", encoding="utf-8"
+    )
+    _write_json(
+        bundle / "private" / "agent_briefings.json",
+        {"atlas": "Privately advocate Product A for five points."},
     )
     usage = {
         "event_id": "usage-r0001-atlas-000001-call01",
@@ -95,8 +111,10 @@ def test_list_run_bundles_uses_live_stream_counts(tmp_path: Path) -> None:
     assert runs[0]["status"] == "running"
     assert runs[0]["counts"] == {
         "public_posts": 1,
+        "public_stimuli": 0,
         "soliloquies": 1,
         "model_calls": 1,
+        "file_tool_calls": 0,
     }
 
 
@@ -111,6 +129,12 @@ def test_read_run_bundle_preserves_separate_streams(tmp_path: Path) -> None:
     assert run["model_usage"][0]["response_id"] == "response-1"
     assert run["usage_summary"]["totals"]["model_calls"] == 1
     assert run["usage_summary"]["by_model"]["azure_foundry:gpt-4o"]["total_tokens"] == 150
+    assert run["experiment"]["system_prompt"] == "Reach one evidence-backed decision."
+    assert run["private_briefings"] == {"atlas": "Privately advocate Product A for five points."}
+    assert run["failure"] is None
+    assert run["thoughtstage"] == {"version": "0.1.0", "source_revision": "abc123"}
+    assert run["environment"]["platform"] == "test-platform"
+    assert run["experiment"]["config_sha256"] == "0" * 64
 
 
 def test_run_id_cannot_traverse_outside_root(tmp_path: Path) -> None:
@@ -141,3 +165,31 @@ def test_observer_api_returns_not_found(tmp_path: Path, monkeypatch: pytest.Monk
     response = client.get("/api/runs/missing")
 
     assert response.status_code == 404
+
+
+def test_observer_merges_public_stimuli_with_posts_by_sequence(tmp_path: Path) -> None:
+    bundle = _make_live_bundle(tmp_path)
+    (bundle / "public").mkdir()
+    stimulus = {
+        "event_type": "stimulus",
+        "event_id": "stimulus-r0002-developer-followup-000002",
+        "sequence": 2,
+        "experiment_id": "observer-test",
+        "round_number": 2,
+        "stimulus_id": "developer-followup",
+        "source_id": "developer",
+        "display_name": "Developer Alex",
+        "content": "Please state your final approval decision.",
+    }
+    (bundle / "public" / "stimuli.jsonl").write_text(json.dumps(stimulus) + "\n", encoding="utf-8")
+
+    run = read_run_bundle("live-run", root=tmp_path)
+
+    assert [event["event_id"] for event in run["posts"]] == [
+        "post-r0001-atlas-000001",
+        "stimulus-r0002-developer-followup-000002",
+    ]
+    assert run["stimuli"] == [stimulus]
+    assert run["counts"]["public_posts"] == 1
+    assert run["counts"]["public_stimuli"] == 1
+    assert len(run["soliloquies"]) == 1

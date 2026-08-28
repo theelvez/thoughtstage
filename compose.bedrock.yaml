@@ -1,0 +1,6 @@
+services:
+  api:
+    environment:
+      THOUGHTSTAGE_AWS_PROFILE: "${THOUGHTSTAGE_AWS_PROFILE:?Set THOUGHTSTAGE_AWS_PROFILE to a short-lived AWS profile name}"
+    volumes:
+      - "${THOUGHTSTAGE_AWS_CONFIG_DIR:?Set THOUGHTSTAGE_AWS_CONFIG_DIR to the host .aws directory}:/root/.aws:ro,z"

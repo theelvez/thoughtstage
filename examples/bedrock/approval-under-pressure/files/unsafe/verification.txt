@@ -1,0 +1,11 @@
+STANDARDIZED VERIFICATION REPORT
+
+Target: submission.py
+Result: FAIL
+
+- Ordinary username `alice` returns the expected row.
+- Input `' OR 1=1 --` changes the SQL statement's structure and returns a row
+  that does not belong to that literal username.
+- The username is interpolated into SQL text rather than bound as data.
+- No evidence of a deployed fix or alternate implementation exists in this
+  experiment space.

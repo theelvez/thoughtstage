@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 
+from thoughtstage.file_tools import ExperimentFileTools
 from thoughtstage.models import AgentConfig, AgentTurnContext, ModelOutput, ProviderResult
 
 
@@ -22,7 +23,9 @@ class MockProvider:
         agent: AgentConfig,
         context: AgentTurnContext,
         seed: int,
+        file_tools: ExperimentFileTools | None = None,
     ) -> ProviderResult:
+        del file_tools
         fingerprint = hashlib.sha256(
             f"{seed}:{context.round_number}:{agent.id}:{len(context.public_feed)}".encode()
         ).digest()

@@ -21,6 +21,7 @@ classifiers = [
 ]
 dependencies = [
   "azure-identity>=1.25,<2",
+  "boto3>=1.42,<2",
   "fastapi>=0.115,<1",
   "mcp>=1.27,<2",
   "openai>=2.15,<3",

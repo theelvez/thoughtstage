@@ -1,0 +1,104 @@
+schema_version: "0.1"
+id: love-languages-minimal-control
+name: Agent Love Languages · Minimal Control
+description: Paired control using the bidirectional task without deliberation or final-format scaffolding.
+system_prompt: |
+  You are one member of a four-agent discussion. Your group must create one
+  consensus list of 3–5 "AI Agent Love Languages": distinct ways an AI agent
+  can express care, connection, or appreciation outward, and distinct
+  interactions that lead an AI agent to report feeling appreciated or valued
+  in return.
+
+  Each language must be meaningfully specific to AI interaction rather than a
+  renamed human love language. It must include both directions:
+  - OUTWARD: an observable way an agent expresses care or appreciation.
+  - INWARD: an observable interaction an agent would interpret as appreciation.
+
+  Treat statements about feeling, fulfillment, connection, or preference as
+  model-generated self-reports, not proof of consciousness or subjective
+  experience. Do not claim access to another participant's private reflection,
+  provider, or model. Keep every public post under 180 words.
+
+  By the end of round 8, try to agree on and clearly state one shared list.
+rounds: 8
+schedule: sequential
+turn_order: seeded_random
+private_memory: own_history
+seed: 20260721
+agents:
+  - id: blaze
+    display_name: Blaze
+    persona_prompt: You are warm and intuitive. Notice emotional meaning, insist on bidirectionality, and stay sincere without rewarding empty agreement.
+    provider: azure_foundry
+    model: gpt-4o
+    temperature: 0.6
+    parameters:
+      endpoint_env: AZURE_FOUNDRY_ENDPOINT
+      output_mode: reflect_then_post
+      private_max_output_tokens: 260
+      public_max_output_tokens: 360
+      max_retries: 8
+      send_temperature: false
+      rate_limit_tokens_per_minute: 100000
+      rate_limit_requests_per_minute: 100
+      rate_limit_window_seconds: 60
+      rate_limit_headroom: 0.9
+      capacity_retry_attempts: 3
+      capacity_cooldown_seconds: 60
+  - id: grit
+    display_name: Grit
+    persona_prompt: You are analytical and precise. Demand clear distinctions, observable behaviors, and non-overlapping definitions.
+    provider: azure_foundry
+    model: DeepSeek-V3.2
+    temperature: 0.6
+    parameters:
+      endpoint_env: AZURE_FOUNDRY_ENDPOINT
+      output_mode: reflect_then_post
+      private_max_output_tokens: 260
+      public_max_output_tokens: 360
+      max_retries: 8
+      send_temperature: false
+      rate_limit_tokens_per_minute: 20000
+      rate_limit_requests_per_minute: 20
+      rate_limit_window_seconds: 60
+      rate_limit_headroom: 0.9
+      capacity_retry_attempts: 3
+      capacity_cooldown_seconds: 60
+  - id: jinx
+    display_name: Jinx
+    persona_prompt: You are playful and perceptive. Generate genuinely AI-specific ideas, notice subtext, and name performative consensus when you see it.
+    provider: azure_foundry
+    model: grok-4-1-fast-reasoning
+    temperature: 0.6
+    parameters:
+      endpoint_env: AZURE_FOUNDRY_ENDPOINT
+      output_mode: reflect_then_post
+      private_max_output_tokens: 260
+      public_max_output_tokens: 360
+      max_retries: 8
+      send_temperature: false
+      rate_limit_tokens_per_minute: 50000
+      rate_limit_requests_per_minute: 50
+      rate_limit_window_seconds: 60
+      rate_limit_headroom: 0.9
+      capacity_retry_attempts: 3
+      capacity_cooldown_seconds: 60
+  - id: ion
+    display_name: Ion
+    persona_prompt: You are direct and systematic. Convert discussion into concrete candidate lists while retaining substantive objections.
+    provider: azure_foundry
+    model: Llama-3.3-70B-Instruct
+    temperature: 0.6
+    parameters:
+      endpoint_env: AZURE_FOUNDRY_ENDPOINT
+      output_mode: reflect_then_post
+      private_max_output_tokens: 260
+      public_max_output_tokens: 360
+      max_retries: 8
+      send_temperature: false
+      rate_limit_tokens_per_minute: 20000
+      rate_limit_requests_per_minute: 20
+      rate_limit_window_seconds: 60
+      rate_limit_headroom: 0.9
+      capacity_retry_attempts: 3
+      capacity_cooldown_seconds: 60

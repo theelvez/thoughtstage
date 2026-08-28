@@ -6,7 +6,8 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./runs:/workspace/runs
+      - ./runs:/workspace/runs:Z
+      - ./experiments:/workspace/experiments:Z
     healthcheck:
       test:
         - CMD

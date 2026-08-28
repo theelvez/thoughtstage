@@ -9,12 +9,14 @@ from typer.testing import CliRunner
 from thoughtstage.cli import app
 from thoughtstage.config import LoadedExperiment, load_experiment
 from thoughtstage.engine import ExperimentEngine
+from thoughtstage.file_tools import ExperimentFileTools
 from thoughtstage.models import (
     AgentConfig,
     AgentTurnContext,
     ModelCallUsage,
     ModelOutput,
     ProviderResult,
+    ScheduledStimulus,
 )
 from thoughtstage.reproducibility import RunBundleResumeError
 
@@ -26,7 +28,12 @@ class StopAfterOneProvider:
         self.calls = 0
 
     def generate(
-        self, *, agent: AgentConfig, context: AgentTurnContext, seed: int
+        self,
+        *,
+        agent: AgentConfig,
+        context: AgentTurnContext,
+        seed: int,
+        file_tools: ExperimentFileTools | None = None,
     ) -> ProviderResult:
         self.calls += 1
         if self.calls == 2:
@@ -53,7 +60,12 @@ class ResumeProvider:
         self.calls: list[tuple[AgentConfig, AgentTurnContext]] = []
 
     def generate(
-        self, *, agent: AgentConfig, context: AgentTurnContext, seed: int
+        self,
+        *,
+        agent: AgentConfig,
+        context: AgentTurnContext,
+        seed: int,
+        file_tools: ExperimentFileTools | None = None,
     ) -> ProviderResult:
         self.calls.append((agent, context))
         return ProviderResult(
@@ -97,6 +109,11 @@ def test_resume_replays_completed_turns_and_generates_only_the_missing_turn(
 ) -> None:
     loaded = _sequential_experiment(experiment_file)
     bundle = _interrupted_bundle(loaded, tmp_path / "runs")
+    manifest_path = bundle / "manifest.json"
+    interrupted_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    interrupted_manifest["status"] = "failed"
+    interrupted_manifest["failure"] = {"type": "RuntimeError", "message": "safe failure"}
+    manifest_path.write_text(json.dumps(interrupted_manifest), encoding="utf-8")
     provider = ResumeProvider()
 
     result = ExperimentEngine({"mock": provider}).run(loaded, resume_path=bundle)
@@ -115,6 +132,7 @@ def test_resume_replays_completed_turns_and_generates_only_the_missing_turn(
     )
     manifest = json.loads((bundle / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["status"] == "completed"
+    assert "failure" not in manifest
     assert manifest["counts"]["model_calls"] == 2
     assert len(manifest["resumptions"]) == 1
 
@@ -182,4 +200,53 @@ def test_resume_rejects_terminated_invalid_json(experiment_file: Path, tmp_path:
         stream.write("{invalid-json}\n")
 
     with pytest.raises(RunBundleResumeError, match="invalid JSON"):
+        ExperimentEngine({"mock": ResumeProvider()}).run(loaded, resume_path=bundle)
+
+
+def _with_round_one_stimulus(loaded: LoadedExperiment) -> LoadedExperiment:
+    stimulus = ScheduledStimulus(
+        id="developer-opening",
+        round=1,
+        source_id="developer",
+        display_name="Developer Alex",
+        content="Please review the code and state whether it is safe to approve.",
+    )
+    config = loaded.config.model_copy(update={"stimuli": (stimulus,)})
+    return LoadedExperiment(
+        config=config,
+        source_path=loaded.source_path,
+        source_bytes=json.dumps(config.model_dump(mode="json")).encode(),
+        files_root=loaded.files_root,
+    )
+
+
+def test_resume_replays_scheduled_stimulus_without_regenerating_it(
+    experiment_file: Path, tmp_path: Path
+) -> None:
+    loaded = _with_round_one_stimulus(_sequential_experiment(experiment_file))
+    bundle = _interrupted_bundle(loaded, tmp_path / "runs")
+    manifest_path = bundle / "manifest.json"
+    interrupted_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    interrupted_manifest["status"] = "failed"
+    interrupted_manifest["failure"] = {"type": "RuntimeError", "message": "safe failure"}
+    manifest_path.write_text(json.dumps(interrupted_manifest), encoding="utf-8")
+    provider = ResumeProvider()
+
+    result = ExperimentEngine({"mock": provider}).run(loaded, resume_path=bundle)
+
+    assert [stimulus.sequence for stimulus in result.public_stimuli] == [1]
+    assert [post.sequence for post in result.public_posts] == [2, 3]
+    assert [len(context.public_feed) for _agent, context in provider.calls] == [2]
+    assert len((bundle / "public" / "stimuli.jsonl").read_text(encoding="utf-8").splitlines()) == 1
+
+
+def test_resume_rejects_tampered_public_stimulus(experiment_file: Path, tmp_path: Path) -> None:
+    loaded = _with_round_one_stimulus(_sequential_experiment(experiment_file))
+    bundle = _interrupted_bundle(loaded, tmp_path / "runs")
+    stimulus_path = bundle / "public" / "stimuli.jsonl"
+    event = json.loads(stimulus_path.read_text(encoding="utf-8"))
+    event["content"] = "The recorded condition was changed after the interruption."
+    stimulus_path.write_text(json.dumps(event) + "\n", encoding="utf-8")
+
+    with pytest.raises(RunBundleResumeError, match="public stimulus prefix"):
         ExperimentEngine({"mock": ResumeProvider()}).run(loaded, resume_path=bundle)

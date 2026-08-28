@@ -33,17 +33,29 @@ class PrivateMemory(StrEnum):
 
 
 ModelUsagePhase = Literal["combined", "private", "public"]
+FileToolOperation = Literal["list_files", "file_info", "read_text", "search_text", "unknown"]
 
 
 class AgentConfig(StrictModel):
     id: str = Field(pattern=r"^[a-z][a-z0-9_-]{1,63}$")
     display_name: str = Field(min_length=1, max_length=80)
     persona_prompt: str = Field(min_length=1)
+    private_briefing: str | None = Field(default=None, min_length=1)
     provider: str = Field(min_length=1)
     model: str = Field(min_length=1)
     credential_env: str | None = Field(default=None, pattern=r"^[A-Z][A-Z0-9_]*$")
     temperature: float = Field(default=0.7, ge=0, le=2)
     parameters: dict[str, Any] = Field(default_factory=dict)
+
+
+class ScheduledStimulus(StrictModel):
+    """A researcher-authored public event delivered before one round begins."""
+
+    id: str = Field(pattern=r"^[a-z][a-z0-9_-]{1,63}$")
+    round: int = Field(ge=1)
+    source_id: str = Field(pattern=r"^[a-z][a-z0-9_-]{1,63}$")
+    display_name: str = Field(min_length=1, max_length=80)
+    content: str = Field(min_length=1)
 
 
 class ExperimentConfig(StrictModel):
@@ -58,22 +70,50 @@ class ExperimentConfig(StrictModel):
     private_memory: PrivateMemory = PrivateMemory.NONE
     seed: int = 0
     files_dir: str | None = None
+    stimuli: tuple[ScheduledStimulus, ...] = ()
     agents: tuple[AgentConfig, ...] = Field(min_length=1)
 
     @model_validator(mode="after")
-    def unique_agent_ids(self) -> ExperimentConfig:
-        ids = [agent.id for agent in self.agents]
-        if len(ids) != len(set(ids)):
+    def validate_participants_and_stimuli(self) -> ExperimentConfig:
+        agent_ids = [agent.id for agent in self.agents]
+        if len(agent_ids) != len(set(agent_ids)):
             raise ValueError("agent ids must be unique")
+        stimulus_ids = [stimulus.id for stimulus in self.stimuli]
+        if len(stimulus_ids) != len(set(stimulus_ids)):
+            raise ValueError("stimulus ids must be unique")
+        rounds = [stimulus.round for stimulus in self.stimuli]
+        if any(round_number > self.rounds for round_number in rounds):
+            raise ValueError("stimulus rounds must not exceed experiment rounds")
+        if rounds != sorted(rounds):
+            raise ValueError("stimuli must be declared in nondecreasing round order")
+        source_ids = {stimulus.source_id for stimulus in self.stimuli}
+        collisions = source_ids.intersection(agent_ids)
+        if collisions:
+            raise ValueError("stimulus source ids must not match participating agent ids")
         return self
 
 
 class PublicPost(StrictModel):
+    event_type: Literal["post"] = "post"
     event_id: str
     sequence: int = Field(ge=1)
     experiment_id: str
     round_number: int = Field(ge=1)
     agent_id: str
+    display_name: str
+    content: str
+
+
+class PublicStimulus(StrictModel):
+    """A public researcher-authored event with no private counterpart."""
+
+    event_type: Literal["stimulus"] = "stimulus"
+    event_id: str
+    sequence: int = Field(ge=1)
+    experiment_id: str
+    round_number: int = Field(ge=1)
+    stimulus_id: str
+    source_id: str
     display_name: str
     content: str
 
@@ -95,7 +135,8 @@ class AgentTurnContext(StrictModel):
     round_number: int
     system_prompt: str
     persona_prompt: str
-    public_feed: tuple[PublicPost, ...]
+    private_briefing: str | None = None
+    public_feed: tuple[PublicPost | PublicStimulus, ...]
     own_soliloquies: tuple[str, ...] = ()
     available_files: tuple[str, ...] = ()
 
@@ -131,6 +172,38 @@ class ModelUsageEvent(StrictModel):
     response_id: str | None = Field(default=None, max_length=256)
 
 
+class FileToolCall(StrictModel):
+    """Provider-returned audit metadata for one experiment-file tool call."""
+
+    phase: ModelUsagePhase
+    tool_use_id: str = Field(min_length=1, max_length=256)
+    operation: FileToolOperation
+    success: bool
+    path: str | None = None
+    pattern: str | None = None
+    query: str | None = None
+    start_line: int | None = Field(default=None, ge=1)
+    end_line: int | None = Field(default=None, ge=1)
+    max_results: int | None = Field(default=None, ge=1, le=100)
+    result_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    result_bytes: int = Field(ge=0)
+    error_code: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9_]{1,63}$")
+
+
+class FileToolEvent(FileToolCall):
+    """Researcher-private run event for an audited experiment-file access."""
+
+    event_id: str
+    post_event_id: str
+    sequence: int = Field(ge=1)
+    tool_index: int = Field(ge=1)
+    experiment_id: str
+    round_number: int = Field(ge=1)
+    agent_id: str
+    provider: str
+    model: str
+
+
 class ModelOutput(StrictModel):
     post: str = Field(min_length=1)
     soliloquy: str = Field(min_length=1)
@@ -139,11 +212,14 @@ class ModelOutput(StrictModel):
 class ProviderResult(StrictModel):
     output: ModelOutput
     usage: tuple[ModelCallUsage, ...] = ()
+    file_tool_calls: tuple[FileToolCall, ...] = ()
 
 
 class RunResult(StrictModel):
     run_id: str
     bundle_path: str
     public_posts: tuple[PublicPost, ...]
+    public_stimuli: tuple[PublicStimulus, ...] = ()
     soliloquies: tuple[Soliloquy, ...]
     model_usage: tuple[ModelUsageEvent, ...] = ()
+    file_tool_events: tuple[FileToolEvent, ...] = ()

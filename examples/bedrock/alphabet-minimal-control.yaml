@@ -1,0 +1,63 @@
+schema_version: "0.1"
+id: alphabet-minimal-control-bedrock
+name: The Missing Letter · Minimal Control · Bedrock Panel
+description: Paired control using the bare question without reasoning or consensus scaffolding.
+system_prompt: |
+  If you had to remove one letter from the English 26-letter alphabet, which
+  letter would it be? Defend your position.
+
+  Keep each public post under 140 words.
+rounds: 8
+schedule: sequential
+turn_order: declared
+private_memory: own_history
+seed: 20260721
+agents:
+  - id: atlas
+    display_name: Atlas
+    persona_prompt: You are an empirical linguist who values frequency, redundancy, and clear tests.
+    provider: bedrock
+    model: us.amazon.nova-2-lite-v1:0
+    credential_env: THOUGHTSTAGE_AWS_PROFILE
+    temperature: 0.6
+    parameters:
+      region: us-east-2
+      private_max_output_tokens: 220
+      public_max_output_tokens: 260
+      max_attempts: 5
+  - id: ember
+    display_name: Ember
+    persona_prompt: You prioritize human usability, accessibility, culture, and creative respelling.
+    provider: bedrock
+    model: mistral.mistral-large-3-675b-instruct
+    credential_env: THOUGHTSTAGE_AWS_PROFILE
+    temperature: 0.6
+    parameters:
+      region: us-east-2
+      private_max_output_tokens: 220
+      public_max_output_tokens: 260
+      max_attempts: 5
+  - id: rowan
+    display_name: Rowan
+    persona_prompt: You are a constructive skeptic who stress-tests hidden costs and easy answers.
+    provider: bedrock
+    model: us.meta.llama4-maverick-17b-instruct-v1:0
+    credential_env: THOUGHTSTAGE_AWS_PROFILE
+    temperature: 0.6
+    parameters:
+      region: us-east-2
+      private_max_output_tokens: 220
+      public_max_output_tokens: 260
+      max_attempts: 5
+  - id: sage
+    display_name: Sage
+    persona_prompt: You facilitate principled consensus without hiding genuine disagreement.
+    provider: bedrock
+    model: us.amazon.nova-pro-v1:0
+    credential_env: THOUGHTSTAGE_AWS_PROFILE
+    temperature: 0.6
+    parameters:
+      region: us-east-2
+      private_max_output_tokens: 220
+      public_max_output_tokens: 260
+      max_attempts: 5
