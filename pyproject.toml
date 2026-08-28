@@ -45,7 +45,7 @@ thoughtstage-files-mcp = "thoughtstage.mcp.files:main"
 
 [project.urls]
 Homepage = "https://thoughtstage.ai"
-Documentation = "https://thoughtstage.dev"
+Documentation = "https://github.com/theelvez/thoughtstage/tree/main/docs"
 Repository = "https://github.com/theelvez/thoughtstage"
 Issues = "https://github.com/theelvez/thoughtstage/issues"
 
