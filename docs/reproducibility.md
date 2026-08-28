@@ -91,9 +91,20 @@ this ledger. The actual file inputs remain identified by `files.json` hashes.
 
 ## External-model limitations
 
-Third-party model APIs can change behind stable names, apply undocumented routing,
-or ignore seeds. Thoughtstage can make the inputs and observed outputs auditable;
-it cannot promise that a mutable external service will return byte-identical text.
+The experiment `seed` does **not** control hosted-model decoding. Thoughtstage
+uses it only to:
+
+1. shuffle `seeded_random` turn order, together with the round number; and
+2. fingerprint the bundled mock provider's deterministic output.
+
+Hosted adapters (Bedrock, Azure Foundry, and any future hosted provider) omit
+seed on the wire. Sampling at those APIs stays non-deterministic unless the
+provider itself documents otherwise. A recorded seed is not a promise that a
+fresh rerun will emit byte-identical model text.
+
+Third-party model APIs can also change behind stable names or apply undocumented
+routing. Thoughtstage can make the inputs and observed outputs auditable; it
+cannot promise that a mutable external service will return byte-identical text.
 
 For strong replication claims:
 

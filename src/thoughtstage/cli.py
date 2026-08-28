@@ -29,6 +29,20 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 
+_SEED_DECODING_WARNING = (
+    "Experiment seed does not control hosted model decoding "
+    "(Bedrock/Azure Foundry sampling). Seed only shuffles seeded_random "
+    "turn order and fingerprints the mock provider."
+)
+
+
+def _seed_decoding_warnings(providers: set[str]) -> list[str]:
+    """Warn when any bound provider drops seed at the decoding layer."""
+
+    if providers - {"mock"}:
+        return [_SEED_DECODING_WARNING]
+    return []
+
 
 @app.command()
 def validate(
@@ -40,19 +54,19 @@ def validate(
     except ExperimentLoadError as exc:
         typer.echo(f"Invalid experiment: {exc}", err=True)
         raise typer.Exit(code=1) from exc
-    typer.echo(
-        json.dumps(
-            {
-                "valid": True,
-                "experiment": loaded.config.id,
-                "agents": len(loaded.config.agents),
-                "rounds": loaded.config.rounds,
-                "scheduled_stimuli": len(loaded.config.stimuli),
-                "schedule": loaded.config.schedule.value,
-            },
-            indent=2,
-        )
-    )
+    payload: dict[str, object] = {
+        "valid": True,
+        "experiment": loaded.config.id,
+        "agents": len(loaded.config.agents),
+        "rounds": loaded.config.rounds,
+        "scheduled_stimuli": len(loaded.config.stimuli),
+        "schedule": loaded.config.schedule.value,
+        "seed": loaded.config.seed,
+    }
+    warnings = _seed_decoding_warnings({agent.provider for agent in loaded.config.agents})
+    if warnings:
+        payload["warnings"] = warnings
+    typer.echo(json.dumps(payload, indent=2))
 
 
 @app.command("run")

@@ -122,6 +122,14 @@ function shortModel(model: string) {
   return model.split("/").at(-1) ?? model;
 }
 
+function seedStripNote(seed: number | undefined, agents: Agent[] | undefined) {
+  if (seed === undefined) return "";
+  const hosted = (agents ?? []).some((agent) => agent.provider !== "mock");
+  return hosted
+    ? ` · seed ${seed} (does not control hosted decoding)`
+    : ` · seed ${seed}`;
+}
+
 function isStimulus(event: PublicEvent): event is PublicStimulus {
   return event.event_type === "stimulus";
 }
@@ -512,7 +520,7 @@ function LiveObserver() {
             {detail?.status === "running" ? "Live experiment" : detail?.status === "failed" ? "Run failed" : detail?.status ?? "Standby"}
           </span>
           <h1>{detail?.experiment.name ?? "Waiting for a run"}</h1>
-          <p>{detail ? `${detail.execution.schedule ?? "unknown"} schedule · started ${formatRunTime(detail.created_at)}` : "Start a Thoughtstage run to populate the observer."}</p>
+          <p>{detail ? `${detail.execution.schedule ?? "unknown"} schedule${seedStripNote(detail.execution.seed, detail.agents)} · started ${formatRunTime(detail.created_at)}` : "Start a Thoughtstage run to populate the observer."}</p>
         </div>
         <div className="run-metrics">
           <div><strong>{String(currentRound).padStart(2, "0")}</strong><span>/ {String(totalRounds).padStart(2, "0")} rounds</span></div>
