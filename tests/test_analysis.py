@@ -42,9 +42,7 @@ class StanceProvider:
             post = f"I choose {letter} because the evidence is still narrow."
         else:
             post = "I still support X as the least disruptive choice."
-        return ProviderResult(
-            output=ModelOutput(post=post, soliloquy=f"private-{agent.id}")
-        )
+        return ProviderResult(output=ModelOutput(post=post, soliloquy=f"private-{agent.id}"))
 
 
 def _with_analyzer(
