@@ -264,6 +264,7 @@ runs/<run-id>/
 ├── lineage.json                 # controlled clones only
 ├── inputs/
 │   └── files/                   # exact declared input snapshots
+├── analysis.json                # when the experiment declares an analyzer
 ├── public.jsonl
 ├── public/
 │   └── stimuli.jsonl
