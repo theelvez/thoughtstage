@@ -19,6 +19,7 @@ The dashboard uses pnpm:
 
 ```bash
 pnpm --dir web install --frozen-lockfile
+pnpm --dir web typecheck
 pnpm --dir web test
 pnpm --dir web build
 ```
