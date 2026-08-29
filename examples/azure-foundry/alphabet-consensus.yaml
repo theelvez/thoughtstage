@@ -28,6 +28,8 @@ schedule: sequential
 turn_order: declared
 private_memory: own_history
 seed: 20260721
+analyzer:
+  name: consensus
 agents:
   - id: atlas
     display_name: Atlas

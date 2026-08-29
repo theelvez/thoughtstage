@@ -19,6 +19,7 @@ so misspellings cannot silently change an experimental condition.
 | `seed` | Recorded scheduling/provider seed |
 | `files_dir` | Optional directory relative to the manifest |
 | `stimuli` | Optional ordered public events delivered before declared rounds |
+| `analyzer` | Optional post-run analyzer (`name` plus `parameters`) |
 | `agents` | One or more independently configured participants |
 
 The engine is a mandatory-post, turn-taking forum. Each agent produces one
@@ -66,6 +67,32 @@ bundles retain exact content in `private/agent_briefings.json` for researchers
 and store only per-agent hashes in the manifest input inventory. This boundary
 supports asymmetric incentives and hidden-information experiments without
 revealing one participant's condition to another.
+
+## Optional analyzer
+
+An experiment may declare one optional analyzer. When present, a completed run
+writes `analysis.json` next to `public.jsonl` and the private streams. Analyzers
+are deterministic and secret-free. They may read the public stream and
+researcher-private records already in the bundle; they never receive another
+agent's generation-time context.
+
+`name` is a built-in analyzer (`consensus`) or a `thoughtstage` module path
+(`thoughtstage.analysis:analyze_consensus_outcome`). `parameters` is an optional
+JSON object passed to the analyzer. Unknown or missing analyzers fail the run
+with a clear error. When `analyzer` is omitted, the bundle is unchanged and
+`analysis.json` is not written.
+
+```yaml
+analyzer:
+  name: consensus
+  parameters:
+    task: letter-removal
+```
+
+The built-in `consensus` analyzer wraps the public-only stance heuristic in
+`thoughtstage.consensus` and persists structured scores (coverage, agreement,
+classification, and per-round counts). `thoughtstage.consensus.analyze_consensus`
+remains importable as that starting heuristic.
 
 ## Shared-prompt guarantee
 

@@ -17,6 +17,7 @@ from typing import Any, Literal, TypeVar
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from thoughtstage.analysis import AnalysisDocument
 from thoughtstage.annotations import AnnotationTarget, ResearchAnnotation
 from thoughtstage.experiment_design import ExperimentLineage
 from thoughtstage.models import (
@@ -671,6 +672,63 @@ def _validate_lineage(
     )
 
 
+def _validate_analysis(
+    root: Path,
+    config: ExperimentConfig,
+    manifest: dict[str, Any],
+    checks: list[IntegrityCheck],
+) -> None:
+    path = root / "analysis.json"
+    analyzer = config.analyzer
+    if analyzer is None:
+        _check(
+            checks,
+            "declared-analysis",
+            True,
+            "No analyzer was declared; analysis.json is not required.",
+            "",
+            evidence={"declared": False, "present": path.is_file()},
+        )
+        return
+    if manifest.get("status") != "completed":
+        _check(
+            checks,
+            "declared-analysis",
+            True,
+            "Analyzer is declared; analysis.json is required once the run completes.",
+            "",
+            evidence={"declared": True, "status": manifest.get("status")},
+        )
+        return
+    try:
+        raw = _read_json(path, dict)
+        assert isinstance(raw, dict)
+        document = AnalysisDocument.model_validate(raw)
+    except (RunIntegrityError, ValidationError, AssertionError) as exc:
+        _check(
+            checks,
+            "declared-analysis",
+            False,
+            "",
+            f"Declared analyzer did not write a valid analysis.json: {exc}",
+            evidence={"declared": analyzer.name, "present": path.is_file()},
+        )
+        return
+    matches = document.run_id == root.name and document.analyzer == analyzer.name
+    _check(
+        checks,
+        "declared-analysis",
+        matches,
+        "analysis.json matches the declared analyzer and run identity.",
+        "analysis.json does not match the declared analyzer or run identity.",
+        evidence={
+            "declared": analyzer.name,
+            "recorded": document.analyzer,
+            "run_id": document.run_id,
+        },
+    )
+
+
 def verify_run_bundle(bundle_path: str | Path) -> RunIntegrityReport:
     """Verify a run bundle without modifying it."""
 
@@ -801,6 +859,7 @@ def verify_run_bundle(bundle_path: str | Path) -> RunIntegrityReport:
         checks,
     )
     _validate_annotations(root, posts, stimuli, soliloquies, checks)
+    _validate_analysis(root, config, manifest, checks)
 
     status_completed = manifest.get("status") == "completed"
     expected_turns = config.rounds * len(config.agents)

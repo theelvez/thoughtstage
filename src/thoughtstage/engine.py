@@ -6,6 +6,11 @@ import random
 from collections.abc import Mapping
 from pathlib import Path
 
+from thoughtstage.analysis import (
+    analysis_context_from_records,
+    resolve_analyzer,
+    run_declared_analyzer,
+)
 from thoughtstage.config import LoadedExperiment
 from thoughtstage.file_tools import ExperimentFileTools
 from thoughtstage.files import ExperimentFileReader
@@ -196,6 +201,38 @@ class ExperimentEngine:
         ):
             raise RunBundleResumeError("existing file tool indexes are not contiguous")
 
+    @staticmethod
+    def _persist_declared_analysis(
+        loaded: LoadedExperiment,
+        writer: RunBundleWriter,
+        public_posts: list[PublicPost],
+        public_stimuli: list[PublicStimulus],
+        soliloquies: list[Soliloquy],
+        model_usage: list[ModelUsageEvent],
+        file_tool_events: list[FileToolEvent],
+    ) -> None:
+        analyzer = loaded.config.analyzer
+        if analyzer is None:
+            return
+        briefings = {
+            agent.id: agent.private_briefing
+            for agent in loaded.config.agents
+            if agent.private_briefing is not None
+        }
+        context = analysis_context_from_records(
+            run_id=writer.run_id,
+            experiment_id=loaded.config.id,
+            parameters=analyzer.parameters,
+            public_posts=public_posts,
+            public_stimuli=public_stimuli,
+            soliloquies=soliloquies,
+            model_usage=model_usage,
+            file_tool_events=file_tool_events,
+            private_briefings=briefings,
+        )
+        document = run_declared_analyzer(analyzer, context)
+        writer.write_analysis(document.model_dump(mode="json"))
+
     def run(
         self,
         loaded: LoadedExperiment,
@@ -205,6 +242,8 @@ class ExperimentEngine:
         resume_path: str | Path | None = None,
     ) -> RunResult:
         config = loaded.config
+        if config.analyzer is not None:
+            resolve_analyzer(config.analyzer.name)
         if resume_path is None:
             writer = RunBundleWriter(loaded, output_root, run_id=run_id)
             existing_posts: list[PublicPost] = []
@@ -446,6 +485,15 @@ class ExperimentEngine:
                 "run bundle contains more public stimuli than the experiment declares"
             )
 
+        self._persist_declared_analysis(
+            loaded,
+            writer,
+            public_posts,
+            public_stimuli,
+            soliloquies,
+            model_usage,
+            file_tool_events,
+        )
         writer.finish(
             public_posts=len(public_posts),
             public_stimuli=len(public_stimuli),

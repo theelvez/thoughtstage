@@ -21,6 +21,7 @@ def test_experiment_schema_has_one_shared_prompt() -> None:
     assert "system_prompt" in properties
     assert "stimuli" in properties
     assert "agents" in properties
+    assert "analyzer" in properties
 
 
 def test_design_contract_is_explicit() -> None:

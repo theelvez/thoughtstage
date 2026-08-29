@@ -15,7 +15,8 @@ _RANKING_PATTERN = re.compile(
     r"(?:\b1(?:st)?\s+place\b\s*(?:is|[:=-])"
     r"|\btop\s+choice\b\s*(?:is|[:=-])"
     r"|\bwinner\b\s+is"
-    r"|(?m:^\s*\*{0,2}winner\s*:))"
+    r"|(?m:^\s*\*{0,2}winner\s*:)"
+    r"|\bfinal\s+vote\s*[:=])"
     r"\s*\*{0,2}[\"']?"
     r"(?:the\s+)?(?:letter\s+|option\s+|submission\s+|candidate\s+)?"
     r"(?P<label>[A-Za-z][A-Za-z0-9_-]{0,39})",

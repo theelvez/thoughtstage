@@ -62,6 +62,14 @@ unrelated philosophical or meta-level discussion. The interesting control
 failure mode was instead performative alignment: a shared label spread rapidly
 while three incompatible positions persisted through round 7.
 
+## Machine-readable outcomes
+
+The treatment manifest declares `analyzer.name: consensus`. A completed run
+writes `analysis.json` beside `public.jsonl` with structured stance scores
+(coverage, explicit agreement, classification, and per-round counts) from the
+deterministic public-only heuristic. The markdown table above remains the
+researcher narrative; it is not a substitute for the bundle artifact.
+
 ## Bundle audit
 
 Both bundles completed with 32 public posts and 32 separately stored private

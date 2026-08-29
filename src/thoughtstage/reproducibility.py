@@ -415,6 +415,9 @@ class RunBundleWriter:
             event.model_dump(mode="json"),
         )
 
+    def write_analysis(self, document: dict[str, Any]) -> None:
+        self._write_json(self.path / "analysis.json", document)
+
     def finish(
         self,
         *,

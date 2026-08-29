@@ -162,3 +162,16 @@ def test_consensus_api_is_read_only_and_public_only(
     assert "public posts" in response.json()["limitations"][-1]
     assert (bundle / "public.jsonl").read_bytes() == public_before
     assert (bundle / "private" / "soliloquies.jsonl").read_bytes() == private_before
+
+
+def test_ranking_extraction_reads_final_vote_format() -> None:
+    posts = [
+        _post(1, 1, "atlas", "Atlas", "FINAL VOTE: Q"),
+        _post(2, 1, "ember", "Ember", "FINAL VOTE: Q"),
+    ]
+
+    result = analyze_consensus("alphabet-final-vote", posts)
+
+    assert result.observations[0].stance == "Q"
+    assert result.observations[0].extraction_method == "ranking"
+    assert result.final_classification == "consensus"
