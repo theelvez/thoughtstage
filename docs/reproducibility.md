@@ -59,7 +59,10 @@ Research annotations are typed, target existing public or private event IDs,
 and live only in `private/annotations.json`. The consensus/stance timeline is a
 deterministic review aid over public posts, not a statistical result or a model
 judge. It reports undetected stances, coverage, possible shifts, and limitations
-instead of filling gaps with inferred beliefs.
+instead of filling gaps with inferred beliefs. When an experiment declares an
+`analyzer`, the same class of heuristic is also persisted as `analysis.json` in
+the completed bundle so outcomes are a replayable artifact rather than a second,
+undocumented scoring pass.
 
 ## Public stimulus accounting
 
