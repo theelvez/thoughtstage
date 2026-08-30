@@ -643,6 +643,10 @@
   font-size: 11px;
 }
 
+.boundary-checks p.env-missing {
+  color: #ffb4a8;
+}
+
 .inline-error {
   padding: 14px 16px;
   background: #f3dcd6;
