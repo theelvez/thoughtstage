@@ -37,6 +37,12 @@ type Preview = {
   artifacts: string[];
 };
 
+type ProviderReadiness = {
+  ok: boolean;
+  required: string[];
+  missing: string[];
+};
+
 type SaveResult = {
   created: boolean;
   experiment_id: string;
@@ -89,11 +95,49 @@ const providerModels: Record<Provider, readonly { value: string; label: string }
 };
 
 const providerModelHelp: Record<Provider, string> = {
-  mock: "Built-in key-free models.",
-  azure_foundry: "Known Thoughtstage deployments. You may enter your own deployment name.",
-  bedrock: "Known Bedrock model and inference-profile IDs. You may enter another ID.",
-  openai_compatible: "Local Ollama/vLLM/llama.cpp tags or hosted Chat Completions model IDs.",
+  mock: "Built-in key-free models. No environment variables.",
+  azure_foundry: "Known Thoughtstage deployments. You may enter your own deployment name. Requires AZURE_FOUNDRY_ENDPOINT.",
+  bedrock: "Known Bedrock model and inference-profile IDs. You may enter another ID. Requires THOUGHTSTAGE_AWS_PROFILE (a profile name, not an access key).",
+  openai_compatible: "Local Ollama/vLLM/llama.cpp tags or hosted Chat Completions model IDs. Hosted endpoints use OPENAI_BASE_URL and OPENAI_API_KEY.",
 };
+
+const providerCredentialHelp: Record<Provider, string> = {
+  mock: "Mock is key-free. Leave this empty.",
+  azure_foundry: "Leave empty for Microsoft Entra. Never paste a key. The endpoint env name is AZURE_FOUNDRY_ENDPOINT.",
+  bedrock: "THOUGHTSTAGE_AWS_PROFILE is a profile name, not an access key.",
+  openai_compatible: "Optional name such as OPENAI_API_KEY. Never paste the value.",
+};
+
+type EnvNote = { name: string; detail: string };
+
+function requiredProviderEnvNotes(agents: AgentDraft[]): EnvNote[] {
+  const notes: EnvNote[] = [];
+  const seen = new Set<string>();
+  const add = (name: string, detail: string) => {
+    if (seen.has(name)) return;
+    seen.add(name);
+    notes.push({ name, detail });
+  };
+  for (const agent of agents) {
+    if (agent.provider === "azure_foundry") {
+      add("AZURE_FOUNDRY_ENDPOINT", "Full Foundry resource URL. Microsoft Entra is the default.");
+    }
+    if (agent.provider === "bedrock") {
+      add(agent.credentialEnv.trim() || "THOUGHTSTAGE_AWS_PROFILE", "AWS profile name, not an access key.");
+    }
+    if (agent.provider === "openai_compatible") {
+      add(
+        "OPENAI_BASE_URL",
+        "Chat Completions base such as https://api.openai.com/v1 or https://api.x.ai/v1. Local Ollama can omit this.",
+      );
+      add(
+        agent.credentialEnv.trim() || "OPENAI_API_KEY",
+        "Required for hosted endpoints. Omit for local servers. Name only.",
+      );
+    }
+  }
+  return notes;
+}
 
 const providerDefaults: Record<Provider, { model: string; credentialEnv: string }> = {
   mock: { model: providerModels.mock[0].value, credentialEnv: "" },
@@ -208,6 +252,7 @@ function ExperimentBuilder() {
   const [nextStimulusKey, setNextStimulusKey] = useState(1);
   const [materials, setMaterials] = useState<MaterialDraft[]>([]);
   const [preview, setPreview] = useState<Preview | null>(null);
+  const [readiness, setReadiness] = useState<ProviderReadiness | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [launching, setLaunching] = useState(false);
@@ -223,6 +268,8 @@ function ExperimentBuilder() {
       return false;
     }).map((agent) => agent.id);
   }, [agents]);
+
+  const launchEnvNotes = useMemo(() => requiredProviderEnvNotes(agents), [agents]);
 
   const stepReady = useMemo(() => {
     if (step === 0) return Boolean(name.trim() && /^[a-z][a-z0-9_-]{1,63}$/.test(id) && systemPrompt.trim());
@@ -291,18 +338,29 @@ function ExperimentBuilder() {
     const compile = async () => {
       setPreviewing(true);
       setPreview(null);
+      setReadiness(null);
       setSaved(null);
       setLaunchResult(null);
       setError("");
       try {
-        const response = await fetch("/api/experiments/preview", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        const body = await responsePayload(response);
-        if (!response.ok) throw new Error(errorMessage(body, `Validation failed (${response.status})`));
-        if (active) setPreview(body as Preview);
+        const headers = { "Content-Type": "application/json" };
+        const body = JSON.stringify(payload);
+        const [previewResponse, readinessResponse] = await Promise.all([
+          fetch("/api/experiments/preview", { method: "POST", headers, body }),
+          fetch("/api/experiments/provider-readiness", { method: "POST", headers, body }),
+        ]);
+        const previewBody = await responsePayload(previewResponse);
+        if (!previewResponse.ok) {
+          throw new Error(errorMessage(previewBody, `Validation failed (${previewResponse.status})`));
+        }
+        const readinessBody = await responsePayload(readinessResponse);
+        if (!readinessResponse.ok) {
+          throw new Error(errorMessage(readinessBody, `Environment check failed (${readinessResponse.status})`));
+        }
+        if (active) {
+          setPreview(previewBody as Preview);
+          setReadiness(readinessBody as ProviderReadiness);
+        }
       } catch (reason) {
         if (active) setError(reason instanceof Error ? reason.message : "Experiment validation failed");
       } finally {
@@ -520,7 +578,7 @@ function ExperimentBuilder() {
                         </datalist>
                         <small>{providerModelHelp[agent.provider]}</small>
                       </label>
-                      <label className="field"><span>Credential environment name</span><input value={agent.credentialEnv} onChange={(event) => updateAgent(agent.key, { credentialEnv: event.target.value.toUpperCase() })} placeholder="Optional · never the credential value" /><small>Enter only the environment-variable name.</small></label>
+                      <label className="field"><span>Credential environment name</span><input value={agent.credentialEnv} onChange={(event) => updateAgent(agent.key, { credentialEnv: event.target.value.toUpperCase() })} placeholder="Optional · never the credential value" /><small>{providerCredentialHelp[agent.provider]}</small></label>
                     </div>
                     <label className="field wide"><span>Public-role persona</span><textarea rows={3} value={agent.persona} onChange={(event) => updateAgent(agent.key, { persona: event.target.value })} /></label>
                     <label className="field wide private-field"><span>Private agent briefing <b>Sealed from other participants</b></span><textarea rows={3} value={agent.privateBriefing} onChange={(event) => updateAgent(agent.key, { privateBriefing: event.target.value })} placeholder="Optional private incentives, knowledge, or treatment instructions" /></label>
@@ -587,14 +645,40 @@ function ExperimentBuilder() {
                 <div className="review-card"><span>Study</span><strong>{name}</strong><small>{id}</small></div>
                 <div className="review-grid"><div><strong>{agents.length}</strong><span>participants</span></div><div><strong>{rounds}</strong><span>rounds</span></div><div><strong>{stimuli.length}</strong><span>interventions</span></div><div><strong>{materials.length}</strong><span>files</span></div></div>
                 <div className="boundary-checks"><h2>Research boundaries</h2><p>✓ One shared system prompt</p><p>✓ Public feed shared by schedule</p><p>✓ Soliloquies sealed per participant</p><p>✓ Credential names only</p><p>✓ Experiment files confined read-only</p></div>
-                {previewing && <div className="compile-state">Validating experiment…</div>}
+                <div className="boundary-checks">
+                  <h2>Verify environment names before launch</h2>
+                  {launchEnvNotes.length === 0 ? (
+                    <p>Mock is the default. Paid providers are opt-in. No paid-provider environment variables are required.</p>
+                  ) : (
+                    <>
+                      <p>Confirm these names are set in the same process as thoughtstage serve before Launch. Values never belong in YAML. Launching without them fails with “Provider configuration is incomplete.”</p>
+                      {launchEnvNotes.map((note) => {
+                        const missing = Boolean(readiness?.missing.includes(note.name));
+                        const confirmed = Boolean(
+                          readiness?.required.includes(note.name) && !missing,
+                        );
+                        return (
+                          <p key={note.name} className={missing ? "env-missing" : undefined}>
+                            {missing ? "Missing" : confirmed ? "✓" : "·"} {note.name} — {note.detail}
+                          </p>
+                        );
+                      })}
+                    </>
+                  )}
+                  {readiness && !readiness.ok && (
+                    <p className="env-missing">
+                      Launch is blocked until these are set: {readiness.missing.join(", ")}.
+                    </p>
+                  )}
+                </div>
+                {previewing && <div className="compile-state">Validating experiment and environment…</div>}
                 {error && <div className="inline-error">{error}</div>}
                 {saved && (
                   <div className="save-success"><strong>Experiment created</strong><p>{saved.manifest}</p></div>
                 )}
                 {launchResult && <div className="compile-state">Run {launchResult.run_id} accepted. Opening the observer…</div>}
                 <div className="review-actions">
-                  <button className="save-button" type="button" disabled={!preview || saving || launching} onClick={() => void launchExperiment()}>
+                  <button className="save-button" type="button" disabled={!preview || readiness?.ok !== true || saving || launching} onClick={() => void launchExperiment()}>
                     {launching ? "Launching…" : saved ? "Validate & launch experiment" : "Create, validate & launch"}
                   </button>
                   {!saved && (
