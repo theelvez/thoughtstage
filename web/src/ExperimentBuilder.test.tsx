@@ -48,7 +48,7 @@ function walkToReview(provider?: "azure_foundry" | "openai_compatible") {
   continueFrom("Research question");
   fireEvent.click(screen.getByRole("button", { name: /manually add participants/i }));
   if (provider) {
-    fireEvent.change(screen.getByRole("combobox"), { target: { value: provider } });
+    fireEvent.change(screen.getByLabelText("Provider"), { target: { value: provider } });
   }
   continueFrom("Participants");
   continueFrom("Interaction");
