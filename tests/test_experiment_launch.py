@@ -258,3 +258,45 @@ def test_provider_readiness_openai_compatible_local_default_needs_no_env(
     assert body == {"ok": True, "required": [], "missing": []}
     assert "OPENAI_API_KEY" not in response.text
     assert "OPENAI_BASE_URL" not in response.text
+
+
+def test_provider_readiness_openai_named_key_is_required(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    draft = _mock_draft("openai-key-ready")
+    agent = draft["experiment"]["agents"][0]
+    agent["provider"] = "openai_compatible"
+    agent["model"] = "gpt-4o-mini"
+    agent["credential_env"] = "OPENAI_API_KEY"
+    agent["parameters"] = {
+        "base_url_env": "OPENAI_BASE_URL",
+        "output_mode": "reflect_then_post",
+    }
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://paid-endpoint.example/v1")
+    client = TestClient(app)
+
+    response = client.post("/api/experiments/provider-readiness", json=draft)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body == {
+        "ok": False,
+        "required": ["OPENAI_API_KEY"],
+        "missing": ["OPENAI_API_KEY"],
+    }
+    assert "https://paid-endpoint.example/v1" not in response.text
+    assert set(body) == {"ok", "required", "missing"}
+
+
+def test_provider_readiness_rejects_native_anthropic() -> None:
+    draft = _mock_draft("anthropic-ready")
+    draft["experiment"]["agents"][0]["provider"] = "anthropic"
+    client = TestClient(app)
+
+    response = client.post("/api/experiments/provider-readiness", json=draft)
+
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert "anthropic" in detail
+    assert "Unsupported provider" in detail

@@ -52,18 +52,15 @@ type LaunchResult = {
   observer_url: string;
 };
 
-type ProviderEnvVariable = {
-  name: string;
-  required: boolean;
-  present: boolean;
-  detail: string;
+type ProviderEnvReport = {
+  ok: boolean;
+  required: string[];
+  missing: string[];
 };
 
-type ProviderEnvReport = {
-  ready: boolean;
-  missing: string[];
-  variables: ProviderEnvVariable[];
-};
+type EnvNote = { name: string; detail: string };
+
+type EnvLine = EnvNote & { status: "present" | "missing" | "unset" };
 
 const steps = ["Research question", "Participants", "Interaction", "Materials", "Review"];
 
@@ -115,14 +112,52 @@ const providerCredentialHelp: Record<Provider, string> = {
   openai_compatible: "Optional name such as OPENAI_API_KEY. Never paste the value.",
 };
 
-function envLineStatus(variable: ProviderEnvVariable) {
-  if (variable.present) return "present";
-  return variable.required ? "missing" : "unset";
+function usedProviderEnvNotes(agents: AgentDraft[]): EnvNote[] {
+  const notes: EnvNote[] = [];
+  const seen = new Set<string>();
+  const add = (name: string, detail: string) => {
+    if (seen.has(name)) return;
+    seen.add(name);
+    notes.push({ name, detail });
+  };
+  for (const agent of agents) {
+    if (agent.provider === "azure_foundry") {
+      add("AZURE_FOUNDRY_ENDPOINT", "Full Foundry resource URL. Microsoft Entra is the default.");
+    }
+    if (agent.provider === "bedrock") {
+      add(agent.credentialEnv.trim() || "THOUGHTSTAGE_AWS_PROFILE", "AWS profile name, not an access key.");
+    }
+    if (agent.provider === "openai_compatible") {
+      add(
+        "OPENAI_BASE_URL",
+        "Chat Completions base such as https://api.openai.com/v1 or https://api.x.ai/v1. Local Ollama can omit this.",
+      );
+      add(
+        agent.credentialEnv.trim() || "OPENAI_API_KEY",
+        "Used for hosted Chat Completions endpoints. Local servers can omit this.",
+      );
+    }
+  }
+  return notes;
 }
 
-function envLineMark(variable: ProviderEnvVariable) {
-  if (variable.present) return "✓";
-  return variable.required ? "✗" : "○";
+function reviewEnvLines(agents: AgentDraft[], report: ProviderEnvReport): EnvLine[] {
+  const notes = usedProviderEnvNotes(agents);
+  const details = new Map(notes.map((note) => [note.name, note.detail]));
+  const names = new Set([...notes.map((note) => note.name), ...report.required]);
+  const missing = new Set(report.missing);
+  const required = new Set(report.required);
+  return [...names].sort().map((name) => ({
+    name,
+    detail: details.get(name) ?? "Named environment reference. Presence only.",
+    status: missing.has(name) ? "missing" : required.has(name) ? "present" : "unset",
+  }));
+}
+
+function envLineMark(status: EnvLine["status"]) {
+  if (status === "present") return "✓";
+  if (status === "missing") return "✗";
+  return "○";
 }
 
 const providerDefaults: Record<Provider, { model: string; credentialEnv: string }> = {
@@ -257,7 +292,11 @@ function ExperimentBuilder() {
     }).map((agent) => agent.id);
   }, [agents]);
 
-  const launchReady = Boolean(preview && verifyReport?.ready && !previewing && !verifying);
+  const launchReady = Boolean(preview && verifyReport?.ok && !previewing && !verifying);
+  const envLines = useMemo(
+    () => (verifyReport ? reviewEnvLines(agents, verifyReport) : []),
+    [agents, verifyReport],
+  );
 
   const stepReady = useMemo(() => {
     if (step === 0) return Boolean(name.trim() && /^[a-z][a-z0-9_-]{1,63}$/.test(id) && systemPrompt.trim());
@@ -336,7 +375,7 @@ function ExperimentBuilder() {
       try {
         const [previewResponse, verifyResponse] = await Promise.all([
           fetch("/api/experiments/preview", { method: "POST", headers, body }),
-          fetch("/api/experiments/verify-providers", { method: "POST", headers, body }),
+          fetch("/api/experiments/provider-readiness", { method: "POST", headers, body }),
         ]);
         const previewBody = await responsePayload(previewResponse);
         const verifyBody = await responsePayload(verifyResponse);
@@ -642,27 +681,29 @@ function ExperimentBuilder() {
                 <div className="boundary-checks env-verify" aria-live="polite">
                   <h2>Verify environment names before launch</h2>
                   {verifying && <p>Checking environment names in the thoughtstage serve process…</p>}
-                  {!verifying && verifyReport && verifyReport.variables.length === 0 && (
+                  {!verifying && verifyReport && envLines.length === 0 && (
                     <p>Mock needs no environment variables. Launch is ready.</p>
                   )}
-                  {!verifying && verifyReport && verifyReport.variables.length > 0 && (
+                  {!verifying && verifyReport && envLines.length > 0 && (
                     <>
-                      {verifyReport.ready ? (
-                        <p>Selected providers are ready. Names below are presence-only; values are never shown.</p>
+                      {verifyReport.ok ? (
+                        <p>
+                          Selected providers are ready. Names below are presence-only; values are never shown.
+                          {agents.some((agent) => agent.provider === "openai_compatible")
+                            ? " openai_compatible uses OPENAI_BASE_URL and OPENAI_API_KEY as the adapter does; local defaults apply when they are unset."
+                            : ""}
+                        </p>
                       ) : (
                         <>
-                          <p>Launch is blocked until these names are set in the same process as thoughtstage serve. Values never belong in YAML.</p>
-                          <p className="env-missing-list">Missing: {verifyReport.missing.join(", ")}</p>
+                          <p>Launch is blocked until these are set: {verifyReport.missing.join(", ")}. Set them in the same process as thoughtstage serve. Values never belong in YAML.</p>
+                          <p className="env-missing-list">Missing {verifyReport.missing.join(", ")}</p>
                         </>
                       )}
-                      {verifyReport.variables.map((variable) => {
-                        const status = envLineStatus(variable);
-                        return (
-                          <p key={variable.name} className={`env-line is-${status}`}>
-                            {envLineMark(variable)} {variable.name} — {status}. {variable.detail}
-                          </p>
-                        );
-                      })}
+                      {envLines.map((line) => (
+                        <p key={line.name} className={`env-line is-${line.status}`}>
+                          {envLineMark(line.status)} {line.name} — {line.status}. {line.detail}
+                        </p>
+                      ))}
                     </>
                   )}
                   <button

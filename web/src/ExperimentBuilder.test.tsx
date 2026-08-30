@@ -43,16 +43,22 @@ function continueFrom(stepHeading: string) {
   fireEvent.click(screen.getByRole("button", { name: /continue/i }));
 }
 
+function walkToReview(provider?: "azure_foundry" | "openai_compatible") {
+  render(<ExperimentBuilder />);
+  continueFrom("Research question");
+  fireEvent.click(screen.getByRole("button", { name: /manually add participants/i }));
+  if (provider) {
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: provider } });
+  }
+  continueFrom("Participants");
+  continueFrom("Interaction");
+  continueFrom("Materials");
+}
+
 describe("ExperimentBuilder", () => {
   it("enables Launch for mock-only drafts after environment probe succeeds", async () => {
     stubBuilderApis({ ok: true, required: [], missing: [] });
-    render(<ExperimentBuilder />);
-
-    continueFrom("Research question");
-    fireEvent.click(screen.getByRole("button", { name: /manually add participants/i }));
-    continueFrom("Participants");
-    continueFrom("Interaction");
-    continueFrom("Materials");
+    walkToReview();
 
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "Review" })).toBeInTheDocument();
@@ -60,6 +66,7 @@ describe("ExperimentBuilder", () => {
     await waitFor(() => {
       expect(screen.getByRole("button", { name: /create, validate & launch/i })).toBeEnabled();
     });
+    expect(screen.getByText("Mock needs no environment variables. Launch is ready.")).toBeInTheDocument();
     expect(screen.queryByText(/Launch is blocked/)).not.toBeInTheDocument();
   });
 
@@ -69,14 +76,7 @@ describe("ExperimentBuilder", () => {
       required: ["AZURE_FOUNDRY_ENDPOINT"],
       missing: ["AZURE_FOUNDRY_ENDPOINT"],
     });
-    render(<ExperimentBuilder />);
-
-    continueFrom("Research question");
-    fireEvent.click(screen.getByRole("button", { name: /manually add participants/i }));
-    fireEvent.change(screen.getByRole("combobox"), { target: { value: "azure_foundry" } });
-    continueFrom("Participants");
-    continueFrom("Interaction");
-    continueFrom("Materials");
+    walkToReview("azure_foundry");
 
     await waitFor(() => {
       expect(screen.getByText(/Missing AZURE_FOUNDRY_ENDPOINT/)).toBeInTheDocument();
@@ -85,5 +85,21 @@ describe("ExperimentBuilder", () => {
       screen.getByText(/Launch is blocked until these are set: AZURE_FOUNDRY_ENDPOINT/),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /create, validate & launch/i })).toBeDisabled();
+    expect(document.body.textContent).not.toContain("sk-");
+    expect(document.body.textContent).not.toContain("secret-value");
+  });
+
+  it("shows openai_compatible adapter env names without blocking local defaults", async () => {
+    stubBuilderApis({ ok: true, required: [], missing: [] });
+    walkToReview("openai_compatible");
+
+    await waitFor(() => {
+      expect(screen.getByText(/Selected providers are ready/i)).toBeInTheDocument();
+    });
+    expect(screen.getByText(/OPENAI_BASE_URL — unset/)).toBeInTheDocument();
+    expect(screen.getByText(/OPENAI_API_KEY — unset/)).toBeInTheDocument();
+    expect(screen.getByText(/as the adapter does/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /create, validate & launch/i })).toBeEnabled();
+    expect(document.body.textContent).not.toContain("sk-");
   });
 });
