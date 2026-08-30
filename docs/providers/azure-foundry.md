@@ -6,18 +6,21 @@ deployment while sharing the experiment's single system prompt and public feed.
 
 ## Authentication
 
-Microsoft Entra ID is the default and recommended local-development path:
+Microsoft Entra ID is the default and recommended local-development path. Set
+`AZURE_FOUNDRY_ENDPOINT` to the Foundry **resource URL**, not a key. Do not
+append `/openai/v1/` — the adapter adds that suffix.
 
-```bash
-# Run in the same host-side Python environment where Thoughtstage is installed.
-# Linux/macOS
-source .venv/bin/activate
+Worked example of the URL shape (substitute your own resource):
+
+```powershell
+# Same host-side Python environment where Thoughtstage is installed.
+.\.venv\Scripts\Activate.ps1
 az login
-# PowerShell
-$env:AZURE_FOUNDRY_ENDPOINT="https://<resource>.services.ai.azure.com"
-# Linux/macOS
-export AZURE_FOUNDRY_ENDPOINT="https://<resource>.services.ai.azure.com"
+$env:AZURE_FOUNDRY_ENDPOINT = "https://latentspace-resource.cognitiveservices.azure.com"
 ```
+
+Unix equivalent: `source .venv/bin/activate` and
+`export AZURE_FOUNDRY_ENDPOINT=...`.
 
 The adapter obtains a short-lived token for `https://ai.azure.com/.default`
 through `DefaultAzureCredential`. Nothing secret is written into the experiment
@@ -61,7 +64,7 @@ Supported provider parameters are:
 
 | Parameter | Default | Meaning |
 | --- | --- | --- |
-| `endpoint_env` | `AZURE_FOUNDRY_ENDPOINT` | Environment variable containing the Foundry resource endpoint |
+| `endpoint_env` | `AZURE_FOUNDRY_ENDPOINT` | Environment variable containing the Foundry resource URL (do not include `/openai/v1/`) |
 | `output_mode` | `json_schema` | Dual-output generation protocol |
 | `max_output_tokens` | `1000` | Combined output limit in `json_schema` mode |
 | `private_max_output_tokens` | `500` | Soliloquy limit in `reflect_then_post` mode |
@@ -125,7 +128,7 @@ authoritative source for charged usage.
 The included example is one simultaneous round with four independently bound
 deployments:
 
-```bash
+```powershell
 thoughtstage validate examples/azure-foundry/experiment.yaml
 thoughtstage run examples/azure-foundry/experiment.yaml
 ```

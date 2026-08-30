@@ -50,174 +50,144 @@ Rowan use the deterministic mock provider, so this path needs no paid model key.
 
 ## Quick start
 
-The example experiment uses deterministic mock agents, so it needs no API key.
+One local story: **setup → verify → wizard**. Commands are Windows PowerShell.
+No Docker is required. On Unix, activate with `source .venv/bin/activate` and
+set variables with `export NAME=value`.
 
-### Docker (Windows or Linux)
+Manifests store environment-variable **names** only. Never put API keys, SSO
+tokens, or other secret values in YAML, examples, or this README.
 
-```bash
-docker compose build
-docker compose run --rm api thoughtstage validate examples/hello-stage/experiment.yaml
-docker compose run --rm api thoughtstage run examples/hello-stage/experiment.yaml
-docker compose up
-```
+### 1. Setup
 
-Open <http://localhost:3000> after the final command.
-
-To auto-run hello-stage with the mock provider and open the observer on that
-completed run:
-
-```bash
-docker compose --profile demo up --build
-```
-
-Then open <http://localhost:3000/?run=hello-stage-demo>. Default
-`docker compose up` stays API and dashboard only.
-
-### Local Python
-
-```bash
+```powershell
 python -m venv .venv
-# Windows: .venv\Scripts\activate
-# Linux/macOS: source .venv/bin/activate
+.\.venv\Scripts\Activate.ps1
 python -m pip install -e ".[dev]"
-
-thoughtstage validate examples/hello-stage/experiment.yaml
-thoughtstage run examples/hello-stage/experiment.yaml
-# Deterministic researcher-authored events need no model key:
-thoughtstage run examples/hello-stage/scheduled-stimuli.yaml
-pytest
 ```
 
-### Microsoft Foundry models
+### 2. Verify with mock
 
-The `azure_foundry` provider uses the GA OpenAI/v1 Responses API. It supports
-Microsoft Entra ID by default, keeping credentials out of experiment manifests.
-Run these commands from the same host-side Python environment in which
-`thoughtstage` is installed; that lets `DefaultAzureCredential` reuse the Azure
-CLI login:
+The mock provider is key-free and is the default in the experiment builder.
 
-```bash
-# Activate the environment created in "Local Python" above first.
-# Linux/macOS: source .venv/bin/activate
+```powershell
+thoughtstage run examples/hello-stage/experiment.yaml
+```
+
+That path exists in the tree. A successful run is enough to confirm the install
+before you attach a paid provider or open the wizard.
+
+### 3. Observer
+
+Start the API and the dashboard in two terminals. Node.js must be on `PATH`
+(`node` and `pnpm`).
+
+```powershell
+thoughtstage serve
+```
+
+API listens on port **8000**.
+
+```powershell
+pnpm --dir web dev
+```
+
+Vite serves the dashboard on port **5173** and proxies `/api` to
+`http://localhost:8000`. Open <http://127.0.0.1:5173>.
+
+If the browser console shows Vite `/api` **ECONNREFUSED**, `thoughtstage serve`
+is not running (or is not on port 8000). Start the API first, then reload.
+
+### 4. Paid providers (opt-in)
+
+Skip this section if you only need mock. Set these names in the **same process**
+that will run `thoughtstage serve` or `thoughtstage run`. Launching the wizard
+against a paid provider without them fails with:
+
+`Provider configuration is incomplete. Set environment variables: AZURE_FOUNDRY_ENDPOINT, THOUGHTSTAGE_AWS_PROFILE`
+
+(The exact names in that error depend on which providers you selected.)
+
+#### Microsoft Foundry
+
+Uses Microsoft Entra ID by default, not an API key. `AZURE_FOUNDRY_ENDPOINT` is
+a **full resource URL**, not a key. Thoughtstage appends `/openai/v1/` itself;
+do not add that suffix.
+
+Worked example of the URL **shape** (substitute your own resource):
+
+```powershell
 az login
-# PowerShell: $env:AZURE_FOUNDRY_ENDPOINT="https://<resource>.services.ai.azure.com"
-# Linux/macOS: export AZURE_FOUNDRY_ENDPOINT="https://<resource>.services.ai.azure.com"
-thoughtstage validate examples/azure-foundry/experiment.yaml
+$env:AZURE_FOUNDRY_ENDPOINT = "https://latentspace-resource.cognitiveservices.azure.com"
 thoughtstage run examples/azure-foundry/experiment.yaml
 ```
 
-An `az login` performed on the host is not automatically available inside a
-Docker or Podman container, and host environment variables are not inherited
-unless explicitly passed. For local Entra development, prefer the host-side
-Python workflow above. Container deployments should provide their own workload
-identity, service-principal environment, or environment-referenced API key;
-never bake credentials into an image or experiment manifest.
+See [the Foundry provider guide](docs/providers/azure-foundry.md).
 
-Each agent can name a different Foundry deployment and can select either strict
-single-call JSON-schema output or the more portable two-call
-`reflect_then_post` protocol. See
-[the Foundry provider guide](docs/providers/azure-foundry.md). To create a dedicated
-cost-tracked research resource without coupling Azure resources to individual runs,
-see the [Azure infrastructure scaffold](infra/azure/README.md).
+#### Amazon Bedrock
 
-### Amazon Bedrock models
-
-The `bedrock` provider uses Bedrock's unified Converse API and short-lived AWS
-credentials. It always sets explicit output-token limits and records the private
-reflection and public post as two separate provider calls:
-
-```bash
-aws sso login --profile thoughtstage-source
-# PowerShell: $env:THOUGHTSTAGE_AWS_PROFILE="thoughtstage-bedrock"
-# Linux/macOS: export THOUGHTSTAGE_AWS_PROFILE=thoughtstage-bedrock
-thoughtstage validate examples/bedrock/model-panel-smoke.yaml
-thoughtstage run examples/bedrock/model-panel-smoke.yaml
-```
-
-To use the no-code experiment builder with Bedrock in Docker or Podman, pass
-the short-lived host SSO profile into the API container through the Bedrock
-Compose override. The host AWS directory is mounted read-only; no credential
-value enters the image, manifest, environment, log, or run bundle.
+`THOUGHTSTAGE_AWS_PROFILE` is a profile **name**, not an access key. SSO uses
+`thoughtstage-source`, then the runtime profile `thoughtstage-bedrock`. YAML
+stays key-free.
 
 ```powershell
 aws sso login --profile thoughtstage-source
 $env:THOUGHTSTAGE_AWS_PROFILE = "thoughtstage-bedrock"
-$env:THOUGHTSTAGE_AWS_CONFIG_DIR = Join-Path $HOME ".aws"
-docker compose -f compose.yaml -f compose.bedrock.yaml up --build
+thoughtstage run examples/bedrock/model-panel-smoke.yaml
 ```
 
-```bash
-aws sso login --profile thoughtstage-source
-export THOUGHTSTAGE_AWS_PROFILE=thoughtstage-bedrock
-export THOUGHTSTAGE_AWS_CONFIG_DIR="$HOME/.aws"
-docker compose -f compose.yaml -f compose.bedrock.yaml up --build
+Scaffold, least-privilege role, and profile setup live in
+[infra/aws/README.md](infra/aws/README.md). See also the
+[Bedrock provider guide](docs/providers/bedrock.md).
+
+#### OpenAI, Grok, and other Chat Completions endpoints
+
+There is one hosted Chat Completions adapter: `openai_compatible`. Point it with
+`OPENAI_BASE_URL` and `OPENAI_API_KEY` (the **names**; set the values in your
+environment, never in YAML).
+
+Real bases:
+
+| Endpoint | `OPENAI_BASE_URL` |
+| --- | --- |
+| OpenAI | `https://api.openai.com/v1` |
+| xAI (Grok) | `https://api.x.ai/v1` |
+
+```powershell
+$env:OPENAI_BASE_URL = "https://api.openai.com/v1"
+# Grok: $env:OPENAI_BASE_URL = "https://api.x.ai/v1"
+# Set OPENAI_API_KEY in this environment. Do not paste the value here or in YAML.
 ```
 
-Run the SSO login on the host again when the cached session expires. Use a
-dedicated, least-privilege profile such as the one created by the AWS scaffold;
-the API can read every profile present in the mounted directory even though
-Thoughtstage selects only the profile named by `THOUGHTSTAGE_AWS_PROFILE`.
+Local Ollama can omit both and defaults to `http://localhost:11434/v1`. See
+[the OpenAI-compatible provider guide](docs/providers/openai-compatible.md).
 
-Each agent can select an independent Bedrock model or inference profile. See the
-[Bedrock provider guide](docs/providers/bedrock.md) and the
-[least-privilege AWS scaffold](infra/aws/README.md). The first four-model run
-series is recorded in the
-[Bedrock model-panel study](docs/experiments/bedrock-first-panel.md).
+There is **no first-class native Anthropic provider**. Anthropic models are not
+a `provider: anthropic` binding. If your AWS account has access, they may appear
+through `bedrock`; that is still the Bedrock adapter, not a native Anthropic
+client.
 
-### OpenAI-compatible models
+### 5. Wizard
 
-The `openai_compatible` provider calls `POST /v1/chat/completions` against any
-OpenAI-compatible endpoint. The local default is `http://localhost:11434/v1`
-(Ollama) and needs no API key. Set `OPENAI_BASE_URL` for vLLM, llama.cpp, Groq,
-or OpenAI itself. Hosted endpoints may set `OPENAI_API_KEY` or an agent's
-`credential_env` to an environment-variable *name*; secret values never enter
-manifests or run bundles.
+Open <http://127.0.0.1:5173/?view=builder> while the API and dashboard from
+step 3 are running.
 
-```bash
-# Optional — omit both for the local Ollama default with no key.
-# export OPENAI_BASE_URL="http://localhost:11434/v1"
-# export OPENAI_API_KEY=
-```
+Intended story:
 
-See [the OpenAI-compatible provider guide](docs/providers/openai-compatible.md).
+1. **Mock is the default.** A new participant starts on the key-free mock
+   provider.
+2. **Paid providers are opt-in.** Choose Microsoft Foundry, Amazon Bedrock, or
+   OpenAI-compatible per participant only when you need them.
+3. **Environment names are visible before Launch.** Review lists the names your
+   selected providers require (`AZURE_FOUNDRY_ENDPOINT`,
+   `THOUGHTSTAGE_AWS_PROFILE`, `OPENAI_BASE_URL`, `OPENAI_API_KEY` as applicable).
+4. **Verify before Launch.** Confirm those names are set in the `thoughtstage
+   serve` process, using the CLI examples in step 4, before you click Launch.
 
-### Researcher experiment builder
+The builder records environment-variable names only. It never accepts secret
+values. YAML preview is validated on Review; Launch then checks that the named
+variables are present and starts a uniquely identified run.
 
-Open <http://127.0.0.1:5173/?view=builder> while the local API and dashboard
-are running, or use `/?view=builder` on the container dashboard. The guided
-workflow collects the shared prompt, independent agent/model bindings, private
-agent briefings, schedule, researcher interventions, and UTF-8 experiment files.
-The model field offers provider-specific, known-working choices while remaining
-editable for account-specific Foundry deployments, Bedrock inference profiles,
-and OpenAI-compatible model names.
-It previews the validated YAML before atomically creating
-`experiments/<experiment-id>/experiment.yaml` and its confined `files/`
-directory. Choose **Create, validate & launch** to check provider readiness,
-start a uniquely identified run, and move directly to that run in the live
-observer. A failed provider call leaves a visible, terminal failed run instead
-of an indefinitely running bundle. Credential values are never accepted; the
-builder records and checks optional environment-variable names only.
-
-The container configuration bind-mounts `experiments/` so researcher-created
-studies survive image replacement. Generated studies are normal Thoughtstage
-manifests and can be validated, run, reviewed, and committed like handwritten
-experiments.
-
-### Live observer
-
-The researcher dashboard tails run bundles while an experiment is in progress.
-Start the API and dashboard in separate terminals:
-
-```bash
-thoughtstage serve --host 127.0.0.1 --port 8000
-pnpm --dir web dev
-```
-
-Open <http://127.0.0.1:5173>, then start an experiment normally. Public posts
-and declared researcher stimuli appear in sequence in the public stream;
-each agent post's paired soliloquy can be opened independently in the
-researcher-only backstage view. Stimuli are visibly marked and never receive a
-private reflection.
+## After a run
 
 Completed runs expose a **Research workbench** beside the results summary. It
 keeps six post-experiment workflows together: an evidence-backed integrity
@@ -226,15 +196,12 @@ side-by-side run comparison, researcher-private bookmarks and annotations, and
 an explicitly heuristic consensus/stance timeline. Star buttons on public posts,
 stimuli, and opened soliloquies create annotations in
 `private/annotations.json`; annotation content never enters the public stream or
-participant context. Clone lineage is carried into the generated experiment and
-every resulting run bundle. The timeline uses only explicit signals in public
-posts and reports coverage and extraction confidence instead of imputing hidden
-beliefs.
+participant context.
 
 If a provider interruption leaves a valid partial bundle, resume only its
 missing turns instead of repeating successful calls:
 
-```bash
+```powershell
 thoughtstage resume runs/<run-id>
 # Use the original manifest when its files_dir inputs are outside the bundle:
 thoughtstage resume runs/<run-id> --manifest examples/my-experiment.yaml
@@ -242,15 +209,14 @@ thoughtstage resume runs/<run-id> --manifest examples/my-experiment.yaml
 
 Run the experiment-scoped, read-only file MCP server with:
 
-```bash
+```powershell
 thoughtstage files-mcp examples/hello-stage/files
 ```
 
 It exposes `list_files`, `file_info`, `read_text`, and `search_text`. Paths are
 confined to the selected experiment directory; traversal and symlink escapes are
 rejected. Bedrock agents receive the same four operations as model-callable
-tools whenever a manifest declares `files_dir`. Tool inputs are validated and
-each access is recorded in the researcher-private file-tool ledger.
+tools whenever a manifest declares `files_dir`.
 
 ## Reproducible run bundles
 
@@ -284,7 +250,7 @@ ledger and can be summarized with `thoughtstage usage runs/<run-id>`.
 
 Verify or export a completed bundle from the command line with:
 
-```bash
+```powershell
 thoughtstage integrity runs/<run-id>
 thoughtstage export-bundle runs/<run-id> -o <run-id>.zip
 ```
