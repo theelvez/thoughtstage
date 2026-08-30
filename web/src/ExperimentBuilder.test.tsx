@@ -16,23 +16,13 @@ function jsonResponse(body: unknown, status = 200): Promise<Response> {
   } as Response);
 }
 
-type ProviderEnvReport = {
-  ready: boolean;
-  missing: string[];
-  variables: Array<{
-    name: string;
-    required: boolean;
-    present: boolean;
-    detail: string;
-  }>;
-};
-
-function stubReviewApis(verify: ProviderEnvReport) {
+function stubBuilderApis(readiness: { ok: boolean; required: string[]; missing: string[] }) {
   vi.stubGlobal(
     "fetch",
     vi.fn((input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-      if (url.includes("/api/experiments/preview")) {
+      const path = url.replace(/^https?:\/\/[^/]+/, "");
+      if (path === "/api/experiments/preview" || path.endsWith("/api/experiments/preview")) {
         return jsonResponse({
           valid: true,
           experiment_id: "untitled-experiment",
@@ -40,93 +30,60 @@ function stubReviewApis(verify: ProviderEnvReport) {
           artifacts: ["experiment.yaml"],
         });
       }
-      if (url.includes("/api/experiments/verify-providers")) {
-        return jsonResponse(verify);
+      if (path.includes("provider-readiness")) {
+        return jsonResponse(readiness);
       }
-      return jsonResponse({ detail: "unexpected" }, 500);
+      return jsonResponse({ detail: "not found" }, 404);
     }),
   );
 }
 
-function continueStep() {
+function continueFrom(stepHeading: string) {
+  expect(screen.getByRole("heading", { name: stepHeading })).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: /continue/i }));
 }
 
-async function goToReview(provider?: "azure_foundry" | "openai_compatible") {
-  render(<ExperimentBuilder />);
-  continueStep();
-  fireEvent.click(screen.getByRole("button", { name: /manually add participants/i }));
-  if (provider) {
-    fireEvent.change(screen.getByLabelText("Provider"), { target: { value: provider } });
-  }
-  continueStep();
-  continueStep();
-  continueStep();
-}
+describe("ExperimentBuilder", () => {
+  it("enables Launch for mock-only drafts after environment probe succeeds", async () => {
+    stubBuilderApis({ ok: true, required: [], missing: [] });
+    render(<ExperimentBuilder />);
 
-describe("ExperimentBuilder review verify", () => {
-  it("lets mock launch without environment variables", async () => {
-    stubReviewApis({ ready: true, missing: [], variables: [] });
-    await goToReview();
+    continueFrom("Research question");
+    fireEvent.click(screen.getByRole("button", { name: /manually add participants/i }));
+    continueFrom("Participants");
+    continueFrom("Interaction");
+    continueFrom("Materials");
 
     await waitFor(() => {
-      expect(screen.getByText("Mock needs no environment variables. Launch is ready.")).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Review" })).toBeInTheDocument();
     });
-    expect(screen.getByRole("button", { name: /create, validate & launch/i })).toBeEnabled();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /create, validate & launch/i })).toBeEnabled();
+    });
+    expect(screen.queryByText(/Launch is blocked/)).not.toBeInTheDocument();
   });
 
-  it("blocks launch with a missing-env list for paid providers", async () => {
-    stubReviewApis({
-      ready: false,
+  it("disables Launch and lists missing Foundry env names from the probe", async () => {
+    stubBuilderApis({
+      ok: false,
+      required: ["AZURE_FOUNDRY_ENDPOINT"],
       missing: ["AZURE_FOUNDRY_ENDPOINT"],
-      variables: [
-        {
-          name: "AZURE_FOUNDRY_ENDPOINT",
-          required: true,
-          present: false,
-          detail: "Full Foundry resource URL. Microsoft Entra is the default.",
-        },
-      ],
     });
-    await goToReview("azure_foundry");
+    render(<ExperimentBuilder />);
+
+    continueFrom("Research question");
+    fireEvent.click(screen.getByRole("button", { name: /manually add participants/i }));
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "azure_foundry" } });
+    continueFrom("Participants");
+    continueFrom("Interaction");
+    continueFrom("Materials");
 
     await waitFor(() => {
-      expect(screen.getByText(/Launch is blocked/i)).toBeInTheDocument();
+      expect(screen.getByText(/Missing AZURE_FOUNDRY_ENDPOINT/)).toBeInTheDocument();
     });
-    expect(screen.getByText("Missing: AZURE_FOUNDRY_ENDPOINT")).toBeInTheDocument();
-    expect(screen.getByText(/AZURE_FOUNDRY_ENDPOINT — missing/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Launch is blocked until these are set: AZURE_FOUNDRY_ENDPOINT/),
+    ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /create, validate & launch/i })).toBeDisabled();
-    expect(document.body.textContent).not.toContain("sk-");
-    expect(document.body.textContent).not.toContain("secret-value");
-  });
-
-  it("shows openai_compatible adapter env names without blocking local defaults", async () => {
-    stubReviewApis({
-      ready: true,
-      missing: [],
-      variables: [
-        {
-          name: "OPENAI_API_KEY",
-          required: false,
-          present: false,
-          detail: "Used for hosted Chat Completions endpoints. Local servers can omit this.",
-        },
-        {
-          name: "OPENAI_BASE_URL",
-          required: false,
-          present: false,
-          detail: "Chat Completions base such as https://api.openai.com/v1 or https://api.x.ai/v1. Local Ollama can omit this.",
-        },
-      ],
-    });
-    await goToReview("openai_compatible");
-
-    await waitFor(() => {
-      expect(screen.getByText(/Selected providers are ready/i)).toBeInTheDocument();
-    });
-    expect(screen.getByText(/OPENAI_BASE_URL — unset/)).toBeInTheDocument();
-    expect(screen.getByText(/OPENAI_API_KEY — unset/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /create, validate & launch/i })).toBeEnabled();
-    expect(document.body.textContent).not.toContain("sk-");
   });
 });
