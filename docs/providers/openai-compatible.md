@@ -3,11 +3,15 @@
 The `openai_compatible` provider calls the standard Chat Completions API
 (`POST /v1/chat/completions`) against any OpenAI-compatible endpoint. That
 includes local servers such as Ollama, vLLM, and llama.cpp, as well as hosted
-gateways such as Groq. Each Thoughtstage agent can name a different model while
-sharing the experiment's single system prompt and public feed.
+gateways such as OpenAI, xAI (Grok), and Groq. Each Thoughtstage agent can name
+a different model while sharing the experiment's single system prompt and public
+feed.
 
 The adapter never inserts the provider name, model ID, base URL, or credential
 into model-visible context.
+
+There is no first-class native Anthropic provider in this repository. Anthropic
+models are not an `openai_compatible` default and are not a separate adapter.
 
 ## Local-first, key-free path
 
@@ -17,9 +21,9 @@ unset and omit `OPENAI_API_KEY`; the adapter sends a non-secret placeholder
 required by the OpenAI client library and never writes it to a manifest, log, or
 run bundle.
 
-```bash
-# Linux/macOS — only needed when the server is not on the default local URL
-export OPENAI_BASE_URL="http://localhost:11434/v1"
+```powershell
+# Only needed when the server is not on the default local URL
+$env:OPENAI_BASE_URL = "http://localhost:11434/v1"
 thoughtstage validate examples/hello-stage/experiment.yaml
 ```
 
@@ -30,8 +34,9 @@ Point `OPENAI_BASE_URL` at another compatible server when needed:
 | Ollama | `http://localhost:11434/v1` |
 | llama.cpp server | `http://localhost:8080/v1` |
 | vLLM | `http://localhost:8000/v1` |
-| Groq | `https://api.groq.com/openai/v1` |
 | OpenAI | `https://api.openai.com/v1` |
+| xAI (Grok) | `https://api.x.ai/v1` |
+| Groq | `https://api.groq.com/openai/v1` |
 
 ## Authentication
 
@@ -48,9 +53,10 @@ parameters:
   output_mode: reflect_then_post
 ```
 
-```bash
-export OPENAI_BASE_URL="https://api.groq.com/openai/v1"
-export OPENAI_API_KEY=
+```powershell
+$env:OPENAI_BASE_URL = "https://api.openai.com/v1"
+# Grok: $env:OPENAI_BASE_URL = "https://api.x.ai/v1"
+# Set OPENAI_API_KEY in this environment. Never put the value in YAML.
 ```
 
 Never put the key itself in YAML. Agents may use different credential-variable

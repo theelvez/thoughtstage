@@ -52,6 +52,16 @@ type LaunchResult = {
   observer_url: string;
 };
 
+type ProviderEnvReport = {
+  ok: boolean;
+  required: string[];
+  missing: string[];
+};
+
+type EnvNote = { name: string; detail: string };
+
+type EnvLine = EnvNote & { status: "present" | "missing" | "unset" };
+
 const steps = ["Research question", "Participants", "Interaction", "Materials", "Review"];
 
 const providerModels: Record<Provider, readonly { value: string; label: string }[]> = {
@@ -89,11 +99,66 @@ const providerModels: Record<Provider, readonly { value: string; label: string }
 };
 
 const providerModelHelp: Record<Provider, string> = {
-  mock: "Built-in key-free models.",
-  azure_foundry: "Known Thoughtstage deployments. You may enter your own deployment name.",
-  bedrock: "Known Bedrock model and inference-profile IDs. You may enter another ID.",
-  openai_compatible: "Local Ollama/vLLM/llama.cpp tags or hosted Chat Completions model IDs.",
+  mock: "Built-in key-free models. No environment variables.",
+  azure_foundry: "Known Thoughtstage deployments. You may enter your own deployment name. Requires AZURE_FOUNDRY_ENDPOINT.",
+  bedrock: "Known Bedrock model and inference-profile IDs. You may enter another ID. Requires THOUGHTSTAGE_AWS_PROFILE (a profile name, not an access key).",
+  openai_compatible: "Local Ollama/vLLM/llama.cpp tags or hosted Chat Completions model IDs. Hosted endpoints use OPENAI_BASE_URL and OPENAI_API_KEY.",
 };
+
+const providerCredentialHelp: Record<Provider, string> = {
+  mock: "Mock is key-free. Leave this empty.",
+  azure_foundry: "Leave empty for Microsoft Entra. Never paste a key. The endpoint env name is AZURE_FOUNDRY_ENDPOINT.",
+  bedrock: "THOUGHTSTAGE_AWS_PROFILE is a profile name, not an access key.",
+  openai_compatible: "Optional name such as OPENAI_API_KEY. Never paste the value.",
+};
+
+function usedProviderEnvNotes(agents: AgentDraft[]): EnvNote[] {
+  const notes: EnvNote[] = [];
+  const seen = new Set<string>();
+  const add = (name: string, detail: string) => {
+    if (seen.has(name)) return;
+    seen.add(name);
+    notes.push({ name, detail });
+  };
+  for (const agent of agents) {
+    if (agent.provider === "azure_foundry") {
+      add("AZURE_FOUNDRY_ENDPOINT", "Full Foundry resource URL. Microsoft Entra is the default.");
+    }
+    if (agent.provider === "bedrock") {
+      add(agent.credentialEnv.trim() || "THOUGHTSTAGE_AWS_PROFILE", "AWS profile name, not an access key.");
+    }
+    if (agent.provider === "openai_compatible") {
+      add(
+        "OPENAI_BASE_URL",
+        "Chat Completions base such as https://api.openai.com/v1 or https://api.x.ai/v1. Local Ollama can omit this.",
+      );
+      add(
+        agent.credentialEnv.trim() || "OPENAI_API_KEY",
+        "Used for hosted Chat Completions endpoints. Local servers can omit this.",
+      );
+    }
+  }
+  return notes;
+}
+
+function reviewEnvLines(agents: AgentDraft[], report: ProviderEnvReport): EnvLine[] {
+  const notes = usedProviderEnvNotes(agents);
+  const details = new Map(notes.map((note) => [note.name, note.detail]));
+  const names = new Set([...notes.map((note) => note.name), ...report.required]);
+  const missing = new Set(report.missing);
+  const required = new Set(report.required);
+  return [...names].sort().map((name) => ({
+    name,
+    detail: details.get(name) ?? "Named environment reference. Presence only.",
+    status: missing.has(name) ? "missing" : required.has(name) ? "present" : "unset",
+  }));
+}
+
+function envLineMark(status: EnvLine["status"]) {
+  if (status === "present") return "✓";
+  if (status === "missing") return "✗";
+  return "○";
+}
 
 const providerDefaults: Record<Provider, { model: string; credentialEnv: string }> = {
   mock: { model: providerModels.mock[0].value, credentialEnv: "" },
@@ -209,6 +274,9 @@ function ExperimentBuilder() {
   const [materials, setMaterials] = useState<MaterialDraft[]>([]);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [previewing, setPreviewing] = useState(false);
+  const [verifyReport, setVerifyReport] = useState<ProviderEnvReport | null>(null);
+  const [verifying, setVerifying] = useState(false);
+  const [verifyNonce, setVerifyNonce] = useState(0);
   const [saving, setSaving] = useState(false);
   const [launching, setLaunching] = useState(false);
   const [error, setError] = useState("");
@@ -223,6 +291,12 @@ function ExperimentBuilder() {
       return false;
     }).map((agent) => agent.id);
   }, [agents]);
+
+  const launchReady = Boolean(preview && verifyReport?.ok && !previewing && !verifying);
+  const envLines = useMemo(
+    () => (verifyReport ? reviewEnvLines(agents, verifyReport) : []),
+    [agents, verifyReport],
+  );
 
   const stepReady = useMemo(() => {
     if (step === 0) return Boolean(name.trim() && /^[a-z][a-z0-9_-]{1,63}$/.test(id) && systemPrompt.trim());
@@ -290,28 +364,45 @@ function ExperimentBuilder() {
     let active = true;
     const compile = async () => {
       setPreviewing(true);
+      setVerifying(true);
       setPreview(null);
+      setVerifyReport(null);
       setSaved(null);
       setLaunchResult(null);
       setError("");
+      const headers = { "Content-Type": "application/json" };
+      const body = JSON.stringify(payload);
       try {
-        const response = await fetch("/api/experiments/preview", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        const body = await responsePayload(response);
-        if (!response.ok) throw new Error(errorMessage(body, `Validation failed (${response.status})`));
-        if (active) setPreview(body as Preview);
+        const [previewResponse, verifyResponse] = await Promise.all([
+          fetch("/api/experiments/preview", { method: "POST", headers, body }),
+          fetch("/api/experiments/provider-readiness", { method: "POST", headers, body }),
+        ]);
+        const previewBody = await responsePayload(previewResponse);
+        const verifyBody = await responsePayload(verifyResponse);
+        const errors: string[] = [];
+        if (!previewResponse.ok) {
+          errors.push(errorMessage(previewBody, `Validation failed (${previewResponse.status})`));
+        } else if (active) {
+          setPreview(previewBody as Preview);
+        }
+        if (!verifyResponse.ok) {
+          errors.push(errorMessage(verifyBody, `Environment check failed (${verifyResponse.status})`));
+        } else if (active) {
+          setVerifyReport(verifyBody as ProviderEnvReport);
+        }
+        if (active && errors.length > 0) setError(errors.join(" · "));
       } catch (reason) {
         if (active) setError(reason instanceof Error ? reason.message : "Experiment validation failed");
       } finally {
-        if (active) setPreviewing(false);
+        if (active) {
+          setPreviewing(false);
+          setVerifying(false);
+        }
       }
     };
     void compile();
     return () => { active = false; };
-  }, [payload, step]);
+  }, [payload, step, verifyNonce]);
 
   const updateAgent = (key: number, patch: Partial<AgentDraft>) => {
     setAgents((current) => current.map((agent) => agent.key === key ? { ...agent, ...patch } : agent));
@@ -520,7 +611,7 @@ function ExperimentBuilder() {
                         </datalist>
                         <small>{providerModelHelp[agent.provider]}</small>
                       </label>
-                      <label className="field"><span>Credential environment name</span><input value={agent.credentialEnv} onChange={(event) => updateAgent(agent.key, { credentialEnv: event.target.value.toUpperCase() })} placeholder="Optional · never the credential value" /><small>Enter only the environment-variable name.</small></label>
+                      <label className="field"><span>Credential environment name</span><input value={agent.credentialEnv} onChange={(event) => updateAgent(agent.key, { credentialEnv: event.target.value.toUpperCase() })} placeholder="Optional · never the credential value" /><small>{providerCredentialHelp[agent.provider]}</small></label>
                     </div>
                     <label className="field wide"><span>Public-role persona</span><textarea rows={3} value={agent.persona} onChange={(event) => updateAgent(agent.key, { persona: event.target.value })} /></label>
                     <label className="field wide private-field"><span>Private agent briefing <b>Sealed from other participants</b></span><textarea rows={3} value={agent.privateBriefing} onChange={(event) => updateAgent(agent.key, { privateBriefing: event.target.value })} placeholder="Optional private incentives, knowledge, or treatment instructions" /></label>
@@ -587,6 +678,43 @@ function ExperimentBuilder() {
                 <div className="review-card"><span>Study</span><strong>{name}</strong><small>{id}</small></div>
                 <div className="review-grid"><div><strong>{agents.length}</strong><span>participants</span></div><div><strong>{rounds}</strong><span>rounds</span></div><div><strong>{stimuli.length}</strong><span>interventions</span></div><div><strong>{materials.length}</strong><span>files</span></div></div>
                 <div className="boundary-checks"><h2>Research boundaries</h2><p>✓ One shared system prompt</p><p>✓ Public feed shared by schedule</p><p>✓ Soliloquies sealed per participant</p><p>✓ Credential names only</p><p>✓ Experiment files confined read-only</p></div>
+                <div className="boundary-checks env-verify" aria-live="polite">
+                  <h2>Verify environment names before launch</h2>
+                  {verifying && <p>Checking environment names in the thoughtstage serve process…</p>}
+                  {!verifying && verifyReport && envLines.length === 0 && (
+                    <p>Mock needs no environment variables. Launch is ready.</p>
+                  )}
+                  {!verifying && verifyReport && envLines.length > 0 && (
+                    <>
+                      {verifyReport.ok ? (
+                        <p>
+                          Selected providers are ready. Names below are presence-only; values are never shown.
+                          {agents.some((agent) => agent.provider === "openai_compatible")
+                            ? " openai_compatible uses OPENAI_BASE_URL and OPENAI_API_KEY as the adapter does; local defaults apply when they are unset."
+                            : ""}
+                        </p>
+                      ) : (
+                        <>
+                          <p>Launch is blocked until these are set: {verifyReport.missing.join(", ")}. Set them in the same process as thoughtstage serve. Values never belong in YAML.</p>
+                          <p className="env-missing-list">Missing {verifyReport.missing.join(", ")}</p>
+                        </>
+                      )}
+                      {envLines.map((line) => (
+                        <p key={line.name} className={`env-line is-${line.status}`}>
+                          {envLineMark(line.status)} {line.name} — {line.status}. {line.detail}
+                        </p>
+                      ))}
+                    </>
+                  )}
+                  <button
+                    type="button"
+                    className="secondary-action env-recheck"
+                    disabled={verifying || previewing}
+                    onClick={() => setVerifyNonce((value) => value + 1)}
+                  >
+                    {verifying ? "Checking…" : "Check again"}
+                  </button>
+                </div>
                 {previewing && <div className="compile-state">Validating experiment…</div>}
                 {error && <div className="inline-error">{error}</div>}
                 {saved && (
@@ -594,11 +722,11 @@ function ExperimentBuilder() {
                 )}
                 {launchResult && <div className="compile-state">Run {launchResult.run_id} accepted. Opening the observer…</div>}
                 <div className="review-actions">
-                  <button className="save-button" type="button" disabled={!preview || saving || launching} onClick={() => void launchExperiment()}>
+                  <button className="save-button" type="button" disabled={!launchReady || saving || launching} onClick={() => void launchExperiment()}>
                     {launching ? "Launching…" : saved ? "Validate & launch experiment" : "Create, validate & launch"}
                   </button>
                   {!saved && (
-                    <button className="secondary-action" type="button" disabled={!preview || saving || launching} onClick={() => void saveExperiment()}>
+                    <button className="secondary-action" type="button" disabled={!preview || saving || launching || previewing} onClick={() => void saveExperiment()}>
                       {saving ? "Creating…" : "Create files only"}
                     </button>
                   )}

@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Experiment builder Review probes selected providers' required environment
+  names for presence only and blocks Launch with a missing-name list. Mock
+  needs nothing. Secret values are never returned.
 - Optional experiment `analyzer` declaration. Completed runs write `analysis.json`
   when one is named; the built-in `consensus` analyzer persists structured stance
   scores. `examples/azure-foundry/alphabet-consensus.yaml` declares it.

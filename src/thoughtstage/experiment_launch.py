@@ -16,6 +16,7 @@ from pydantic import ValidationError
 
 from thoughtstage.config import ExperimentLoadError, LoadedExperiment, load_experiment
 from thoughtstage.engine import ExperimentEngine
+from thoughtstage.models import ExperimentConfig
 from thoughtstage.observer import configured_runs_root
 from thoughtstage.providers.azure_foundry import FoundrySettings
 from thoughtstage.providers.bedrock import BedrockSettings
@@ -65,15 +66,15 @@ def _experiment_manifest(experiment_id: str, experiments_root: Path) -> Path:
     return candidate
 
 
-def _missing_environment(loaded: LoadedExperiment) -> tuple[str, ...]:
-    missing: set[str] = set()
-    unknown = sorted({agent.provider for agent in loaded.config.agents} - KNOWN_PROVIDERS)
+def _required_environment(config: ExperimentConfig) -> tuple[str, ...]:
+    required: set[str] = set()
+    unknown = sorted({agent.provider for agent in config.agents} - KNOWN_PROVIDERS)
     if unknown:
         raise ProviderReadinessError("Unsupported provider bindings: " + ", ".join(unknown))
 
-    for agent in loaded.config.agents:
-        if agent.credential_env and not os.getenv(agent.credential_env, "").strip():
-            missing.add(agent.credential_env)
+    for agent in config.agents:
+        if agent.credential_env:
+            required.add(agent.credential_env)
         if agent.provider == "azure_foundry":
             try:
                 settings = FoundrySettings.model_validate(agent.parameters)
@@ -81,8 +82,7 @@ def _missing_environment(loaded: LoadedExperiment) -> tuple[str, ...]:
                 raise ProviderReadinessError(
                     f"Invalid Microsoft Foundry settings for participant {agent.id!r}."
                 ) from exc
-            if not os.getenv(settings.endpoint_env, "").strip():
-                missing.add(settings.endpoint_env)
+            required.add(settings.endpoint_env)
         elif agent.provider == "bedrock":
             try:
                 BedrockSettings.model_validate(agent.parameters)
@@ -97,7 +97,19 @@ def _missing_environment(loaded: LoadedExperiment) -> tuple[str, ...]:
                 raise ProviderReadinessError(
                     f"Invalid OpenAI-compatible settings for participant {agent.id!r}."
                 ) from exc
-    return tuple(sorted(missing))
+    return tuple(sorted(required))
+
+
+def _missing_environment(config: ExperimentConfig) -> tuple[str, ...]:
+    return tuple(name for name in _required_environment(config) if not os.getenv(name, "").strip())
+
+
+def probe_provider_environment(config: ExperimentConfig) -> dict[str, bool | list[str]]:
+    """Return required env names and which are unset. Never includes values."""
+
+    required = list(_required_environment(config))
+    missing = list(_missing_environment(config))
+    return {"ok": not missing, "required": required, "missing": missing}
 
 
 def prepare_launch(
@@ -116,7 +128,7 @@ def prepare_launch(
     if loaded.config.id != experiment_id:
         raise ExperimentLaunchError("saved experiment id does not match its directory")
 
-    missing = _missing_environment(loaded)
+    missing = _missing_environment(loaded.config)
     if missing:
         raise ProviderReadinessError(
             "Provider configuration is incomplete. Set environment variables: " + ", ".join(missing)

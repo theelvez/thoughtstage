@@ -34,6 +34,7 @@ from thoughtstage.experiment_launch import (
     ProviderReadinessError,
     execute_launch,
     prepare_launch,
+    probe_provider_environment,
 )
 from thoughtstage.integrity import RunIntegrityError, verify_run_bundle
 from thoughtstage.models import ExperimentConfig
@@ -108,6 +109,16 @@ def preview_experiment(draft: ExperimentDraft) -> dict:
         "yaml": render_experiment_yaml(draft),
         "artifacts": artifact_paths(draft),
     }
+
+
+@app.post("/api/experiments/provider-readiness")
+def provider_readiness(draft: ExperimentDraft) -> dict:
+    """Probe selected providers' required env names without returning values."""
+
+    try:
+        return probe_provider_environment(draft.experiment)
+    except ProviderReadinessError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @app.post("/api/experiments", status_code=status.HTTP_201_CREATED)
