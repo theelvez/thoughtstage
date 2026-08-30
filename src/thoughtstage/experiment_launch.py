@@ -16,6 +16,7 @@ from pydantic import ValidationError
 
 from thoughtstage.config import ExperimentLoadError, LoadedExperiment, load_experiment
 from thoughtstage.engine import ExperimentEngine
+from thoughtstage.models import ExperimentConfig
 from thoughtstage.observer import configured_runs_root
 from thoughtstage.providers.azure_foundry import FoundrySettings
 from thoughtstage.providers.bedrock import BedrockSettings
@@ -51,6 +52,18 @@ class PreparedLaunch:
     runs_root: Path
 
 
+@dataclass(frozen=True)
+class ProviderEnvironmentReport:
+    """Secret-free env-name presence report shared by verify and Launch."""
+
+    required: tuple[str, ...]
+    missing: tuple[str, ...]
+
+    @property
+    def ok(self) -> bool:
+        return not self.missing
+
+
 def _experiment_manifest(experiment_id: str, experiments_root: Path) -> Path:
     if EXPERIMENT_ID_PATTERN.fullmatch(experiment_id) is None:
         raise ExperimentNotFoundError("invalid experiment id")
@@ -65,15 +78,29 @@ def _experiment_manifest(experiment_id: str, experiments_root: Path) -> Path:
     return candidate
 
 
-def _missing_environment(loaded: LoadedExperiment) -> tuple[str, ...]:
+def _environment_present(name: str) -> bool:
+    return bool(os.getenv(name, "").strip())
+
+
+def inspect_provider_environment(config: ExperimentConfig) -> ProviderEnvironmentReport:
+    """Probe os.environ presence for names Launch already requires.
+
+    Returns names only. Values are never copied into the report. Mock agents
+    contribute nothing. OpenAI-compatible local defaults may omit OPENAI_API_KEY
+    and OPENAI_BASE_URL, matching prepare_launch.
+    """
+
+    required: set[str] = set()
     missing: set[str] = set()
-    unknown = sorted({agent.provider for agent in loaded.config.agents} - KNOWN_PROVIDERS)
+    unknown = sorted({agent.provider for agent in config.agents} - KNOWN_PROVIDERS)
     if unknown:
         raise ProviderReadinessError("Unsupported provider bindings: " + ", ".join(unknown))
 
-    for agent in loaded.config.agents:
-        if agent.credential_env and not os.getenv(agent.credential_env, "").strip():
-            missing.add(agent.credential_env)
+    for agent in config.agents:
+        if agent.credential_env:
+            required.add(agent.credential_env)
+            if not _environment_present(agent.credential_env):
+                missing.add(agent.credential_env)
         if agent.provider == "azure_foundry":
             try:
                 settings = FoundrySettings.model_validate(agent.parameters)
@@ -81,7 +108,8 @@ def _missing_environment(loaded: LoadedExperiment) -> tuple[str, ...]:
                 raise ProviderReadinessError(
                     f"Invalid Microsoft Foundry settings for participant {agent.id!r}."
                 ) from exc
-            if not os.getenv(settings.endpoint_env, "").strip():
+            required.add(settings.endpoint_env)
+            if not _environment_present(settings.endpoint_env):
                 missing.add(settings.endpoint_env)
         elif agent.provider == "bedrock":
             try:
@@ -97,7 +125,14 @@ def _missing_environment(loaded: LoadedExperiment) -> tuple[str, ...]:
                 raise ProviderReadinessError(
                     f"Invalid OpenAI-compatible settings for participant {agent.id!r}."
                 ) from exc
-    return tuple(sorted(missing))
+    return ProviderEnvironmentReport(
+        required=tuple(sorted(required)),
+        missing=tuple(sorted(missing)),
+    )
+
+
+def _missing_environment(loaded: LoadedExperiment) -> tuple[str, ...]:
+    return inspect_provider_environment(loaded.config).missing
 
 
 def prepare_launch(

@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Experiment builder Review probes whether selected providers' environment
+  **names** are set in the `thoughtstage serve` process and disables Launch
+  until they are. Presence only; values are never returned or displayed.
 - Optional experiment `analyzer` declaration. Completed runs write `analysis.json`
   when one is named; the built-in `consensus` analyzer persists structured stance
   scores. `examples/azure-foundry/alphabet-consensus.yaml` declares it.

@@ -33,6 +33,7 @@ from thoughtstage.experiment_launch import (
     ExperimentNotFoundError,
     ProviderReadinessError,
     execute_launch,
+    inspect_provider_environment,
     prepare_launch,
 )
 from thoughtstage.integrity import RunIntegrityError, verify_run_bundle
@@ -107,6 +108,21 @@ def preview_experiment(draft: ExperimentDraft) -> dict:
         "experiment_id": draft.experiment.id,
         "yaml": render_experiment_yaml(draft),
         "artifacts": artifact_paths(draft),
+    }
+
+
+@app.post("/api/experiments/provider-readiness")
+def provider_readiness(draft: ExperimentDraft) -> dict:
+    """Probe whether Launch-required environment names are set. Names only."""
+
+    try:
+        report = inspect_provider_environment(draft.experiment)
+    except ProviderReadinessError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {
+        "ok": report.ok,
+        "required": list(report.required),
+        "missing": list(report.missing),
     }
 
 
