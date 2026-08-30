@@ -120,6 +120,142 @@ def test_launch_api_rejects_invalid_and_missing_experiment_ids(
     assert client.post("/api/experiments/..%2Foutside/launch").status_code == 404
 
 
+def _assert_secret_free(payload: object, *secrets: str) -> None:
+    blob = json.dumps(payload)
+    for secret in secrets:
+        assert secret not in blob
+
+    def walk(node: object) -> None:
+        if isinstance(node, dict):
+            assert "value" not in node
+            for item in node.values():
+                walk(item)
+        elif isinstance(node, list):
+            for item in node:
+                walk(item)
+
+    walk(payload)
+
+
+def test_verify_providers_mock_needs_nothing_and_is_ready() -> None:
+    response = TestClient(app).post("/api/experiments/verify-providers", json=_mock_draft())
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload == {"ready": True, "missing": [], "variables": []}
+    _assert_secret_free(payload)
+
+
+def test_verify_providers_blocks_paid_opt_in_with_missing_names_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    draft = _mock_draft("foundry-verify")
+    foundry = draft["experiment"]["agents"][0]
+    foundry["provider"] = "azure_foundry"
+    foundry["model"] = "gpt-4o"
+    foundry["parameters"] = {
+        "endpoint_env": "AZURE_FOUNDRY_ENDPOINT",
+        "output_mode": "reflect_then_post",
+        "send_temperature": False,
+    }
+    bedrock = draft["experiment"]["agents"][1]
+    bedrock["provider"] = "bedrock"
+    bedrock["model"] = "us.amazon.nova-2-lite-v1:0"
+    bedrock["credential_env"] = "THOUGHTSTAGE_AWS_PROFILE"
+    bedrock["parameters"] = {"region": "us-east-2"}
+    monkeypatch.delenv("AZURE_FOUNDRY_ENDPOINT", raising=False)
+    monkeypatch.delenv("THOUGHTSTAGE_AWS_PROFILE", raising=False)
+    monkeypatch.setenv("AZURE_FOUNDRY_ENDPOINT", "")
+    monkeypatch.setenv("THOUGHTSTAGE_AWS_PROFILE", "   ")
+
+    response = TestClient(app).post("/api/experiments/verify-providers", json=draft)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ready"] is False
+    assert payload["missing"] == ["AZURE_FOUNDRY_ENDPOINT", "THOUGHTSTAGE_AWS_PROFILE"]
+    assert {item["name"] for item in payload["variables"]} == {
+        "AZURE_FOUNDRY_ENDPOINT",
+        "THOUGHTSTAGE_AWS_PROFILE",
+    }
+    assert all(item["required"] is True and item["present"] is False for item in payload["variables"])
+    _assert_secret_free(payload)
+
+
+def test_verify_providers_reports_presence_without_secret_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    draft = _mock_draft("foundry-present")
+    agent = draft["experiment"]["agents"][0]
+    agent["provider"] = "azure_foundry"
+    agent["model"] = "gpt-4o"
+    agent["credential_env"] = "LAUNCH_SECRET_KEY"
+    agent["parameters"] = {
+        "endpoint_env": "LAUNCH_FOUNDRY_ENDPOINT",
+        "output_mode": "reflect_then_post",
+        "send_temperature": False,
+    }
+    monkeypatch.setenv("LAUNCH_FOUNDRY_ENDPOINT", "https://secret-host.example/openai")
+    monkeypatch.setenv("LAUNCH_SECRET_KEY", "sk-super-secret-value")
+
+    response = TestClient(app).post("/api/experiments/verify-providers", json=draft)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ready"] is True
+    assert payload["missing"] == []
+    names = {item["name"]: item for item in payload["variables"]}
+    assert names["LAUNCH_FOUNDRY_ENDPOINT"]["present"] is True
+    assert names["LAUNCH_SECRET_KEY"]["present"] is True
+    _assert_secret_free(
+        payload,
+        "sk-super-secret-value",
+        "secret-host.example",
+        "https://secret-host.example/openai",
+    )
+
+
+def test_verify_providers_openai_compatible_uses_adapter_env_names(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    draft = _mock_draft("openai-verify")
+    agent = draft["experiment"]["agents"][0]
+    agent["provider"] = "openai_compatible"
+    agent["model"] = "gpt-4o-mini"
+    agent["parameters"] = {
+        "base_url_env": "OPENAI_BASE_URL",
+        "output_mode": "reflect_then_post",
+    }
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    response = TestClient(app).post("/api/experiments/verify-providers", json=draft)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ready"] is True
+    assert payload["missing"] == []
+    names = {item["name"]: item for item in payload["variables"]}
+    assert set(names) == {"OPENAI_API_KEY", "OPENAI_BASE_URL"}
+    assert names["OPENAI_BASE_URL"]["required"] is False
+    assert names["OPENAI_API_KEY"]["required"] is False
+    assert names["OPENAI_BASE_URL"]["present"] is False
+    assert names["OPENAI_API_KEY"]["present"] is False
+    _assert_secret_free(payload)
+
+
+def test_verify_providers_rejects_native_anthropic() -> None:
+    draft = _mock_draft("anthropic-verify")
+    draft["experiment"]["agents"][0]["provider"] = "anthropic"
+
+    response = TestClient(app).post("/api/experiments/verify-providers", json=draft)
+
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert "anthropic" in detail
+    assert "Unsupported provider" in detail
+
+
 def test_failed_run_status_never_records_exception_message(tmp_path: Path) -> None:
     bundle = tmp_path / "failed-run"
     bundle.mkdir()

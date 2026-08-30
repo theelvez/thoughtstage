@@ -100,8 +100,9 @@ is not running (or is not on port 8000). Start the API first, then reload.
 ### 4. Paid providers (opt-in)
 
 Skip this section if you only need mock. Set these names in the **same process**
-that will run `thoughtstage serve` or `thoughtstage run`. Launching the wizard
-against a paid provider without them fails with:
+that will run `thoughtstage serve` or `thoughtstage run`. The wizard Review
+step probes presence only (never values) and blocks Launch with the missing
+names. Launching without them still fails with:
 
 `Provider configuration is incomplete. Set environment variables: AZURE_FOUNDRY_ENDPOINT, THOUGHTSTAGE_AWS_PROFILE`
 
@@ -178,14 +179,18 @@ Intended story:
 2. **Paid providers are opt-in.** Choose Microsoft Foundry, Amazon Bedrock, or
    OpenAI-compatible per participant only when you need them.
 3. **Environment names are visible before Launch.** Review lists the names your
-   selected providers require (`AZURE_FOUNDRY_ENDPOINT`,
+   selected providers use (`AZURE_FOUNDRY_ENDPOINT`,
    `THOUGHTSTAGE_AWS_PROFILE`, `OPENAI_BASE_URL`, `OPENAI_API_KEY` as applicable).
-4. **Verify before Launch.** Confirm those names are set in the `thoughtstage
-   serve` process, using the CLI examples in step 4, before you click Launch.
+4. **Verify before Launch.** Review probes whether those names are set in the
+   `thoughtstage serve` process (presence only; values are never shown). Mock
+   needs nothing and can Launch. Paid providers block Launch with the missing
+   names until they are set. `openai_compatible` uses `OPENAI_BASE_URL` and
+   `OPENAI_API_KEY` as the adapter does; local defaults apply when they are
+   unset.
 
 The builder records environment-variable names only. It never accepts secret
-values. YAML preview is validated on Review; Launch then checks that the named
-variables are present and starts a uniquely identified run.
+values. YAML preview is validated on Review; verify checks presence of the
+named variables; Launch starts a uniquely identified run.
 
 ## After a run
 

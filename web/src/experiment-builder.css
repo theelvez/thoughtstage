@@ -643,6 +643,30 @@
   font-size: 11px;
 }
 
+.env-missing-list {
+  color: #ffb4a8;
+  font: 500 11px/1.5 "DM Mono", monospace;
+}
+
+.env-line.is-present {
+  color: #c8ff36;
+}
+
+.env-line.is-missing {
+  color: #ffb4a8;
+}
+
+.env-line.is-unset {
+  color: rgba(246, 243, 234, 0.62);
+}
+
+.env-verify .env-recheck {
+  margin-top: 14px;
+  min-height: 36px;
+  color: #f6f3ea;
+  border-color: rgba(246, 243, 234, 0.28);
+}
+
 .inline-error {
   padding: 14px 16px;
   background: #f3dcd6;

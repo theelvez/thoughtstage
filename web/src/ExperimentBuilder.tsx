@@ -52,6 +52,19 @@ type LaunchResult = {
   observer_url: string;
 };
 
+type ProviderEnvVariable = {
+  name: string;
+  required: boolean;
+  present: boolean;
+  detail: string;
+};
+
+type ProviderEnvReport = {
+  ready: boolean;
+  missing: string[];
+  variables: ProviderEnvVariable[];
+};
+
 const steps = ["Research question", "Participants", "Interaction", "Materials", "Review"];
 
 const providerModels: Record<Provider, readonly { value: string; label: string }[]> = {
@@ -102,35 +115,14 @@ const providerCredentialHelp: Record<Provider, string> = {
   openai_compatible: "Optional name such as OPENAI_API_KEY. Never paste the value.",
 };
 
-type EnvNote = { name: string; detail: string };
+function envLineStatus(variable: ProviderEnvVariable) {
+  if (variable.present) return "present";
+  return variable.required ? "missing" : "unset";
+}
 
-function requiredProviderEnvNotes(agents: AgentDraft[]): EnvNote[] {
-  const notes: EnvNote[] = [];
-  const seen = new Set<string>();
-  const add = (name: string, detail: string) => {
-    if (seen.has(name)) return;
-    seen.add(name);
-    notes.push({ name, detail });
-  };
-  for (const agent of agents) {
-    if (agent.provider === "azure_foundry") {
-      add("AZURE_FOUNDRY_ENDPOINT", "Full Foundry resource URL. Microsoft Entra is the default.");
-    }
-    if (agent.provider === "bedrock") {
-      add(agent.credentialEnv.trim() || "THOUGHTSTAGE_AWS_PROFILE", "AWS profile name, not an access key.");
-    }
-    if (agent.provider === "openai_compatible") {
-      add(
-        "OPENAI_BASE_URL",
-        "Chat Completions base such as https://api.openai.com/v1 or https://api.x.ai/v1. Local Ollama can omit this.",
-      );
-      add(
-        agent.credentialEnv.trim() || "OPENAI_API_KEY",
-        "Required for hosted endpoints. Omit for local servers. Name only.",
-      );
-    }
-  }
-  return notes;
+function envLineMark(variable: ProviderEnvVariable) {
+  if (variable.present) return "✓";
+  return variable.required ? "✗" : "○";
 }
 
 const providerDefaults: Record<Provider, { model: string; credentialEnv: string }> = {
@@ -247,6 +239,9 @@ function ExperimentBuilder() {
   const [materials, setMaterials] = useState<MaterialDraft[]>([]);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [previewing, setPreviewing] = useState(false);
+  const [verifyReport, setVerifyReport] = useState<ProviderEnvReport | null>(null);
+  const [verifying, setVerifying] = useState(false);
+  const [verifyNonce, setVerifyNonce] = useState(0);
   const [saving, setSaving] = useState(false);
   const [launching, setLaunching] = useState(false);
   const [error, setError] = useState("");
@@ -262,7 +257,7 @@ function ExperimentBuilder() {
     }).map((agent) => agent.id);
   }, [agents]);
 
-  const launchEnvNotes = useMemo(() => requiredProviderEnvNotes(agents), [agents]);
+  const launchReady = Boolean(preview && verifyReport?.ready && !previewing && !verifying);
 
   const stepReady = useMemo(() => {
     if (step === 0) return Boolean(name.trim() && /^[a-z][a-z0-9_-]{1,63}$/.test(id) && systemPrompt.trim());
@@ -330,28 +325,45 @@ function ExperimentBuilder() {
     let active = true;
     const compile = async () => {
       setPreviewing(true);
+      setVerifying(true);
       setPreview(null);
+      setVerifyReport(null);
       setSaved(null);
       setLaunchResult(null);
       setError("");
+      const headers = { "Content-Type": "application/json" };
+      const body = JSON.stringify(payload);
       try {
-        const response = await fetch("/api/experiments/preview", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        const body = await responsePayload(response);
-        if (!response.ok) throw new Error(errorMessage(body, `Validation failed (${response.status})`));
-        if (active) setPreview(body as Preview);
+        const [previewResponse, verifyResponse] = await Promise.all([
+          fetch("/api/experiments/preview", { method: "POST", headers, body }),
+          fetch("/api/experiments/verify-providers", { method: "POST", headers, body }),
+        ]);
+        const previewBody = await responsePayload(previewResponse);
+        const verifyBody = await responsePayload(verifyResponse);
+        const errors: string[] = [];
+        if (!previewResponse.ok) {
+          errors.push(errorMessage(previewBody, `Validation failed (${previewResponse.status})`));
+        } else if (active) {
+          setPreview(previewBody as Preview);
+        }
+        if (!verifyResponse.ok) {
+          errors.push(errorMessage(verifyBody, `Environment check failed (${verifyResponse.status})`));
+        } else if (active) {
+          setVerifyReport(verifyBody as ProviderEnvReport);
+        }
+        if (active && errors.length > 0) setError(errors.join(" · "));
       } catch (reason) {
         if (active) setError(reason instanceof Error ? reason.message : "Experiment validation failed");
       } finally {
-        if (active) setPreviewing(false);
+        if (active) {
+          setPreviewing(false);
+          setVerifying(false);
+        }
       }
     };
     void compile();
     return () => { active = false; };
-  }, [payload, step]);
+  }, [payload, step, verifyNonce]);
 
   const updateAgent = (key: number, patch: Partial<AgentDraft>) => {
     setAgents((current) => current.map((agent) => agent.key === key ? { ...agent, ...patch } : agent));
@@ -627,18 +639,40 @@ function ExperimentBuilder() {
                 <div className="review-card"><span>Study</span><strong>{name}</strong><small>{id}</small></div>
                 <div className="review-grid"><div><strong>{agents.length}</strong><span>participants</span></div><div><strong>{rounds}</strong><span>rounds</span></div><div><strong>{stimuli.length}</strong><span>interventions</span></div><div><strong>{materials.length}</strong><span>files</span></div></div>
                 <div className="boundary-checks"><h2>Research boundaries</h2><p>✓ One shared system prompt</p><p>✓ Public feed shared by schedule</p><p>✓ Soliloquies sealed per participant</p><p>✓ Credential names only</p><p>✓ Experiment files confined read-only</p></div>
-                <div className="boundary-checks">
+                <div className="boundary-checks env-verify" aria-live="polite">
                   <h2>Verify environment names before launch</h2>
-                  {launchEnvNotes.length === 0 ? (
-                    <p>Mock is the default. Paid providers are opt-in. No paid-provider environment variables are required.</p>
-                  ) : (
+                  {verifying && <p>Checking environment names in the thoughtstage serve process…</p>}
+                  {!verifying && verifyReport && verifyReport.variables.length === 0 && (
+                    <p>Mock needs no environment variables. Launch is ready.</p>
+                  )}
+                  {!verifying && verifyReport && verifyReport.variables.length > 0 && (
                     <>
-                      <p>Confirm these names are set in the same process as thoughtstage serve before Launch. Values never belong in YAML. Launching without them fails with “Provider configuration is incomplete.”</p>
-                      {launchEnvNotes.map((note) => (
-                        <p key={note.name}>✓ {note.name} — {note.detail}</p>
-                      ))}
+                      {verifyReport.ready ? (
+                        <p>Selected providers are ready. Names below are presence-only; values are never shown.</p>
+                      ) : (
+                        <>
+                          <p>Launch is blocked until these names are set in the same process as thoughtstage serve. Values never belong in YAML.</p>
+                          <p className="env-missing-list">Missing: {verifyReport.missing.join(", ")}</p>
+                        </>
+                      )}
+                      {verifyReport.variables.map((variable) => {
+                        const status = envLineStatus(variable);
+                        return (
+                          <p key={variable.name} className={`env-line is-${status}`}>
+                            {envLineMark(variable)} {variable.name} — {status}. {variable.detail}
+                          </p>
+                        );
+                      })}
                     </>
                   )}
+                  <button
+                    type="button"
+                    className="secondary-action env-recheck"
+                    disabled={verifying || previewing}
+                    onClick={() => setVerifyNonce((value) => value + 1)}
+                  >
+                    {verifying ? "Checking…" : "Check again"}
+                  </button>
                 </div>
                 {previewing && <div className="compile-state">Validating experiment…</div>}
                 {error && <div className="inline-error">{error}</div>}
@@ -647,11 +681,11 @@ function ExperimentBuilder() {
                 )}
                 {launchResult && <div className="compile-state">Run {launchResult.run_id} accepted. Opening the observer…</div>}
                 <div className="review-actions">
-                  <button className="save-button" type="button" disabled={!preview || saving || launching} onClick={() => void launchExperiment()}>
+                  <button className="save-button" type="button" disabled={!launchReady || saving || launching} onClick={() => void launchExperiment()}>
                     {launching ? "Launching…" : saved ? "Validate & launch experiment" : "Create, validate & launch"}
                   </button>
                   {!saved && (
-                    <button className="secondary-action" type="button" disabled={!preview || saving || launching} onClick={() => void saveExperiment()}>
+                    <button className="secondary-action" type="button" disabled={!preview || saving || launching || previewing} onClick={() => void saveExperiment()}>
                       {saving ? "Creating…" : "Create files only"}
                     </button>
                   )}
