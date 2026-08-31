@@ -318,3 +318,7 @@ def test_provider_models_api_mock_and_never_returns_secrets(
         params={"provider": "bedrock", "region": "US-EAST-2"},
     )
     assert bad_region.status_code == 422
+    detail = bad_region.json()["detail"]
+    assert isinstance(detail, list)
+    assert detail[0]["loc"][-1] == "region"
+    assert "msg" in detail[0]

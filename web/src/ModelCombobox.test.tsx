@@ -46,6 +46,26 @@ describe("ModelCombobox", () => {
     expect(onChange).toHaveBeenCalledWith("Llama-3.3-70B-Instruct");
   });
 
+  it("exposes the highlighted option to assistive tech while the list is open", () => {
+    render(
+      <ModelCombobox
+        value="gpt-4o"
+        options={foundryModels}
+        onChange={vi.fn()}
+      />,
+    );
+
+    const input = screen.getByRole("combobox");
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+
+    const activeId = input.getAttribute("aria-activedescendant");
+    expect(activeId).toBeTruthy();
+    const active = document.getElementById(activeId ?? "");
+    expect(active).toHaveAttribute("role", "option");
+    expect(active).toHaveAccessibleName(/Llama-3.3-70B-Instruct/i);
+  });
+
   it("keeps typing available when the catalog is empty or failed", () => {
     const onChange = vi.fn();
     render(

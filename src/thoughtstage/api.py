@@ -148,7 +148,10 @@ def provider_models(
             )
         )
     except ValidationError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=422,
+            detail=exc.errors(include_context=False),
+        ) from exc
     return catalog.model_dump(mode="json")
 
 

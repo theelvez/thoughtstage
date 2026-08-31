@@ -93,6 +93,9 @@ function ModelCombobox({
           aria-labelledby={labelledBy}
           aria-expanded={open}
           aria-controls={listId}
+          aria-activedescendant={
+            open && visible[activeIndex] ? `${generatedId}-option-${activeIndex}` : undefined
+          }
           aria-autocomplete="list"
           value={value}
           onChange={(event) => {
@@ -130,6 +133,7 @@ function ModelCombobox({
           {visible.map((option, index) => (
             <li key={option.value}>
               <button
+                id={`${generatedId}-option-${index}`}
                 type="button"
                 role="option"
                 aria-selected={index === activeIndex}
