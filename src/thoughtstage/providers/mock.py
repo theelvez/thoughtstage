@@ -6,6 +6,17 @@ import hashlib
 
 from thoughtstage.file_tools import ExperimentFileTools
 from thoughtstage.models import AgentConfig, AgentTurnContext, ModelOutput, ProviderResult
+from thoughtstage.provider_catalog import (
+    CatalogModel,
+    ProviderModelCatalog,
+    catalog_model,
+    success_catalog,
+)
+
+MOCK_MODELS: tuple[CatalogModel, ...] = (
+    catalog_model("deterministic-mock", "Deterministic mock · recommended"),
+    catalog_model("deterministic-v1", "Deterministic mock · legacy example ID"),
+)
 
 
 class MockProvider:
@@ -16,6 +27,11 @@ class MockProvider:
         "identify the smallest useful experiment",
         "make disagreement legible",
     )
+
+    def list_models(self) -> ProviderModelCatalog:
+        """Return the built-in key-free mock roster."""
+
+        return success_catalog("mock", source="builtin", models=list(MOCK_MODELS))
 
     def generate(
         self,

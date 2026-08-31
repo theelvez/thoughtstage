@@ -18,6 +18,14 @@ from thoughtstage.models import (
     ModelUsagePhase,
     ProviderResult,
 )
+from thoughtstage.provider_catalog import (
+    CatalogModel,
+    ProviderModelCatalog,
+    catalog_model,
+    empty_catalog,
+    looks_like_non_chat,
+    success_catalog,
+)
 
 DEFAULT_BASE_URL_ENV = "OPENAI_BASE_URL"
 DEFAULT_API_KEY_ENV = "OPENAI_API_KEY"
@@ -45,8 +53,13 @@ class _ChatResource(Protocol):
     completions: _CompletionsResource
 
 
+class _ModelsResource(Protocol):
+    def list(self) -> Any: ...
+
+
 class _OpenAICompatibleClient(Protocol):
     chat: _ChatResource
+    models: _ModelsResource
 
 
 class OpenAICompatibleSettings(BaseModel):
@@ -315,6 +328,86 @@ class OpenAICompatibleProvider:
             output=ModelOutput(post=_completion_text(public_response), soliloquy=soliloquy),
             usage=tuple(item for item in (private_usage, public_usage) if item is not None),
         )
+
+    def list_models(
+        self,
+        *,
+        base_url_env: str | None = None,
+        credential_env: str | None = None,
+    ) -> ProviderModelCatalog:
+        """List model IDs from GET {OPENAI_BASE_URL}/models when the server supports it."""
+
+        try:
+            settings = OpenAICompatibleSettings.model_validate(
+                {"base_url_env": base_url_env} if base_url_env else {}
+            )
+            endpoint = os.getenv(settings.base_url_env, "").strip() or DEFAULT_BASE_URL
+            if credential_env is not None:
+                credential = os.getenv(credential_env, "")
+                if not credential:
+                    raise OpenAICompatibleConfigurationError(
+                        f"credential environment variable {credential_env!r} is not set"
+                    )
+            else:
+                credential = (
+                    os.getenv(settings.api_key_env, "").strip() or LOCAL_API_KEY_PLACEHOLDER
+                )
+            client = self._client_factory(
+                base_url=_normalize_base_url(endpoint),
+                api_key=credential,
+                timeout=settings.timeout_seconds,
+                max_retries=0,
+            )
+            models_api = getattr(client, "models", None)
+            list_models = getattr(models_api, "list", None)
+            if not callable(list_models):
+                return empty_catalog(
+                    "openai_compatible",
+                    source="endpoint",
+                    error=("This OpenAI-compatible server does not list models. Type a model ID."),
+                )
+            payload = list_models()
+        except OpenAICompatibleConfigurationError:
+            missing = []
+            if credential_env and not os.getenv(credential_env, "").strip():
+                missing.append(credential_env)
+            return empty_catalog(
+                "openai_compatible",
+                source="endpoint",
+                error=(
+                    "Could not list OpenAI-compatible models. "
+                    + (
+                        f"Set {', '.join(missing)} in the thoughtstage serve process."
+                        if missing
+                        else "Check OPENAI_BASE_URL and credential environment names."
+                    )
+                ),
+                missing=tuple(missing),
+            )
+        except Exception:
+            return empty_catalog(
+                "openai_compatible",
+                source="endpoint",
+                error=("This OpenAI-compatible server does not list models. Type a model ID."),
+            )
+        raw_items = _get(payload, "data")
+        if raw_items is None:
+            raw_items = payload if isinstance(payload, list) else []
+        if not isinstance(raw_items, list):
+            return empty_catalog(
+                "openai_compatible",
+                source="endpoint",
+                error=("This OpenAI-compatible server does not list models. Type a model ID."),
+            )
+        models: list[CatalogModel] = []
+        for item in raw_items:
+            model_id = _get(item, "id")
+            if not isinstance(model_id, str) or not model_id.strip():
+                continue
+            if looks_like_non_chat(model_id):
+                continue
+            models.append(catalog_model(model_id.strip()))
+        return success_catalog("openai_compatible", source="endpoint", models=models)
 
     def generate(
         self,

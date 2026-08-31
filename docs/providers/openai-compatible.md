@@ -59,6 +59,9 @@ $env:OPENAI_BASE_URL = "https://api.openai.com/v1"
 # Set OPENAI_API_KEY in this environment. Never put the value in YAML.
 ```
 
+Or put those names in a gitignored `.env` and run `.\scripts\dev.ps1` or
+`./scripts/dev.sh` so the API and dashboard share the same process.
+
 Never put the key itself in YAML. Agents may use different credential-variable
 references when an experiment requires independent bindings. Secret values never
 enter manifests, Compose files, CI, examples, tests, or run bundles.
@@ -77,6 +80,11 @@ parameters:
 
 The `model` field is the Chat Completions model name (for example an Ollama tag
 or a Groq model ID). It is recorded in the experiment manifest.
+
+The experiment builder calls `GET {OPENAI_BASE_URL}/models` when the adapter
+and server support it. If that endpoint is missing or fails, the field stays
+free-text and the wizard does not invent model names. API keys are never
+returned.
 
 Supported provider parameters are:
 

@@ -26,6 +26,10 @@ aws sso login --profile thoughtstage-source
 export THOUGHTSTAGE_AWS_PROFILE=thoughtstage-bedrock
 ```
 
+The same profile name can live in a gitignored `.env`. Then
+`.\scripts\dev.ps1` or `./scripts/dev.sh` starts the API and dashboard in
+that environment. Do not put the profile value in YAML.
+
 The environment variable contains an AWS profile name, not a secret. A manifest
 references that variable through `credential_env`:
 
@@ -100,6 +104,12 @@ completion call. Access metadata and result hashes are written only to
 `private/file_tools.jsonl`.
 
 ## Model IDs and geographic routing
+
+The experiment builder lists TEXT foundation models and inference profiles
+available to `THOUGHTSTAGE_AWS_PROFILE` in the experiment's Region (the wizard
+uses `us-east-2`, matching the smoke examples). Embedding IDs are omitted when
+obvious. If the list call fails, the wizard shows an empty or error state and
+still allows typing a model ID. Profile values are never returned.
 
 Use live catalog discovery rather than copying model IDs from old results:
 

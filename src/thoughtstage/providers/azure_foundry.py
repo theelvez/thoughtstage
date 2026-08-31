@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import math
 import os
 import time
+import urllib.error
+import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
 from threading import Lock
@@ -24,9 +27,20 @@ from thoughtstage.models import (
     ModelUsagePhase,
     ProviderResult,
 )
+from thoughtstage.provider_catalog import (
+    CatalogModel,
+    ProviderModelCatalog,
+    catalog_model,
+    empty_catalog,
+    looks_like_non_chat,
+    success_catalog,
+)
 
 DEFAULT_ENDPOINT_ENV = "AZURE_FOUNDRY_ENDPOINT"
 FOUNDRY_TOKEN_SCOPE = "https://ai.azure.com/.default"
+COGNITIVE_SERVICES_TOKEN_SCOPE = "https://cognitiveservices.azure.com/.default"
+FOUNDRY_DEPLOYMENTS_API_VERSION = "2024-10-21"
+FOUNDRY_LIST_TIMEOUT_SECONDS = 20.0
 
 
 class AzureFoundryError(RuntimeError):
@@ -73,6 +87,84 @@ class FoundrySettings(BaseModel):
 
 ClientFactory = Callable[..., _FoundryClient]
 TokenProviderFactory = Callable[[], Callable[[], str]]
+JsonGetter = Callable[[str, dict[str, str], float], Any]
+
+
+def _default_json_getter(url: str, headers: dict[str, str], timeout: float) -> Any:
+    request = urllib.request.Request(url, headers=headers, method="GET")
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        raise AzureFoundryError(f"Foundry catalog HTTP {exc.code}") from exc
+    except urllib.error.URLError as exc:
+        raise AzureFoundryError("Foundry catalog request failed") from exc
+    except json.JSONDecodeError as exc:
+        raise AzureFoundryError("Foundry catalog returned invalid JSON") from exc
+    return payload
+
+
+def _resource_root(endpoint: str) -> str:
+    trimmed = endpoint.strip().rstrip("/")
+    if trimmed.endswith("/openai/v1"):
+        return trimmed[: -len("/openai/v1")]
+    return trimmed
+
+
+def _deployment_id(item: Any) -> str | None:
+    if isinstance(item, str) and item.strip():
+        return item.strip()
+    if not isinstance(item, dict):
+        return None
+    for key in ("id", "name", "deployment_name"):
+        value = item.get(key)
+        if isinstance(value, str) and value.strip() and "/" not in value:
+            return value.strip()
+    properties = item.get("properties")
+    if isinstance(properties, dict):
+        for key in ("id", "name"):
+            value = properties.get(key)
+            if isinstance(value, str) and value.strip() and "/" not in value:
+                return value.strip()
+    return None
+
+
+def _capability_flags(item: Any) -> dict[str, bool]:
+    if not isinstance(item, dict):
+        return {}
+    raw = item.get("capabilities")
+    if raw is None and isinstance(item.get("properties"), dict):
+        raw = item["properties"].get("capabilities")
+    if not isinstance(raw, dict):
+        return {}
+    flags: dict[str, bool] = {}
+    for key, value in raw.items():
+        if isinstance(value, bool):
+            flags[str(key).replace("_", "").lower()] = value
+    return flags
+
+
+def _is_chat_deployment(item: Any, deployment_id: str) -> bool:
+    flags = _capability_flags(item)
+    chat = flags.get("chatcompletion") or flags.get("completion")
+    embeddings = flags.get("embeddings")
+    if chat is False and embeddings is True:
+        return False
+    if embeddings is True and chat is not True:
+        return False
+    return not looks_like_non_chat(deployment_id)
+
+
+def _iter_catalog_items(payload: Any) -> list[Any]:
+    if isinstance(payload, list):
+        return payload
+    if not isinstance(payload, dict):
+        return []
+    for key in ("data", "value", "deployments", "models"):
+        items = payload.get(key)
+        if isinstance(items, list):
+            return items
+    return []
 
 
 @dataclass(frozen=True)
@@ -234,11 +326,13 @@ class AzureFoundryProvider:
         *,
         client_factory: ClientFactory = OpenAI,
         token_provider_factory: TokenProviderFactory = _default_token_provider_factory,
+        json_getter: JsonGetter = _default_json_getter,
         rate_limiter: DeploymentRateLimiter | None = None,
         capacity_sleeper: Callable[[float], None] = time.sleep,
     ) -> None:
         self._client_factory = client_factory
         self._token_provider_factory = token_provider_factory
+        self._json_getter = json_getter
         self._rate_limiter = rate_limiter or DeploymentRateLimiter()
         self._capacity_sleeper = capacity_sleeper
 
@@ -484,6 +578,85 @@ class AzureFoundryProvider:
             output=ModelOutput(post=_response_text(public_response), soliloquy=soliloquy),
             usage=tuple(item for item in (private_usage, public_usage) if item is not None),
         )
+
+    def _catalog_headers(self, credential_env: str | None) -> dict[str, str]:
+        if credential_env is not None:
+            credential = os.getenv(credential_env, "")
+            if not credential.strip():
+                raise AzureFoundryConfigurationError(
+                    f"credential environment variable {credential_env!r} is not set"
+                )
+            return {"api-key": credential, "Accept": "application/json"}
+        token = self._token_provider_factory()()
+        if not token or not str(token).strip():
+            raise AzureFoundryConfigurationError("Entra token provider returned an empty token")
+        return {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+
+    def _fetch_foundry_items(self, endpoint: str, headers: dict[str, str]) -> list[Any]:
+        root = _resource_root(endpoint)
+        deployments_url = f"{root}/openai/deployments?api-version={FOUNDRY_DEPLOYMENTS_API_VERSION}"
+        last_error: AzureFoundryError | None = None
+        saw_success = False
+        for url in (
+            deployments_url,
+            f"{_normalize_base_url(endpoint).rstrip('/')}/models",
+        ):
+            try:
+                payload = self._json_getter(url, headers, FOUNDRY_LIST_TIMEOUT_SECONDS)
+            except AzureFoundryError as exc:
+                last_error = exc
+                continue
+            saw_success = True
+            items = _iter_catalog_items(payload)
+            if items:
+                return items
+        if last_error is not None and not saw_success:
+            raise last_error
+        return []
+
+    def list_models(
+        self,
+        *,
+        endpoint_env: str | None = None,
+        credential_env: str | None = None,
+    ) -> ProviderModelCatalog:
+        """List chat-capable deployments on the configured Foundry endpoint."""
+
+        env_name = endpoint_env or DEFAULT_ENDPOINT_ENV
+        endpoint = os.getenv(env_name, "").strip()
+        missing: list[str] = []
+        if not endpoint:
+            missing.append(env_name)
+        if credential_env and not os.getenv(credential_env, "").strip():
+            missing.append(credential_env)
+        if missing:
+            return empty_catalog(
+                "azure_foundry",
+                source="endpoint",
+                error=(
+                    "Could not list Foundry deployments. Set "
+                    + ", ".join(missing)
+                    + " in the thoughtstage serve process."
+                ),
+                missing=tuple(missing),
+            )
+        try:
+            headers = self._catalog_headers(credential_env)
+            items = self._fetch_foundry_items(endpoint, headers)
+        except Exception:
+            return empty_catalog(
+                "azure_foundry",
+                source="endpoint",
+                error=(f"Could not list Foundry deployments. Check Entra login and {env_name}."),
+                missing=(),
+            )
+        models: list[CatalogModel] = []
+        for item in items:
+            deployment_id = _deployment_id(item)
+            if deployment_id is None or not _is_chat_deployment(item, deployment_id):
+                continue
+            models.append(catalog_model(deployment_id))
+        return success_catalog("azure_foundry", source="endpoint", models=models)
 
     def generate(
         self,

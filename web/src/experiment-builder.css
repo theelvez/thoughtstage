@@ -285,6 +285,86 @@
   line-height: 1.4;
 }
 
+.model-combobox {
+  position: relative;
+}
+
+.model-combobox-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 48px;
+}
+
+.model-combobox-control input {
+  border-right: 0;
+}
+
+.model-combobox-toggle {
+  height: 48px;
+  border: 1px solid rgba(24, 24, 21, 0.23);
+  background: rgba(255, 255, 255, 0.42);
+  color: #181815;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.model-combobox-control input:focus,
+.model-combobox-toggle:focus {
+  border-color: #4734d3;
+  background: rgba(255, 255, 255, 0.7);
+  box-shadow: 0 0 0 3px rgba(71, 52, 211, 0.09);
+}
+
+.model-combobox-list {
+  position: absolute;
+  z-index: 8;
+  top: calc(100% + 4px);
+  right: 0;
+  left: 0;
+  max-height: 240px;
+  margin: 0;
+  padding: 6px 0;
+  overflow: auto;
+  list-style: none;
+  border: 1px solid rgba(24, 24, 21, 0.23);
+  background: #f7f5ee;
+  box-shadow: 0 12px 28px rgba(24, 24, 21, 0.12);
+}
+
+.model-combobox-list button,
+.model-combobox-status {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  padding: 10px 14px;
+  border: 0;
+  background: transparent;
+  color: #181815;
+  text-align: left;
+  cursor: pointer;
+  font: 500 13px/1.35 "Manrope", sans-serif;
+}
+
+.model-combobox-list button.is-active,
+.model-combobox-list button:hover {
+  background: rgba(71, 52, 211, 0.08);
+}
+
+.model-combobox-list small {
+  color: rgba(24, 24, 21, 0.55);
+  font-size: 11px;
+}
+
+.model-combobox-status {
+  cursor: default;
+  color: rgba(24, 24, 21, 0.62);
+}
+
+.model-combobox-status.is-error {
+  color: #8a2b2b;
+}
+
 .prompt-field textarea {
   font-size: 16px;
   line-height: 1.65;

@@ -24,6 +24,10 @@ pnpm --dir web test
 pnpm --dir web build
 ```
 
+To run the API and dashboard together from a shared environment, use
+`.\scripts\dev.ps1` on Windows or `./scripts/dev.sh` on Unix. Copy
+`.env.example` to a gitignored `.env` and fill only the names you need.
+
 ## Non-negotiable boundaries
 
 Changes must preserve these invariants:

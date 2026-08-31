@@ -22,9 +22,19 @@ $env:AZURE_FOUNDRY_ENDPOINT = "https://latentspace-resource.cognitiveservices.az
 Unix equivalent: `source .venv/bin/activate` and
 `export AZURE_FOUNDRY_ENDPOINT=...`.
 
+To start the API and dashboard in that same environment, put the endpoint in
+a gitignored `.env` (see `.env.example`) and run `.\scripts\dev.ps1` or
+`./scripts/dev.sh`. Do not put the URL in YAML.
+
 The adapter obtains a short-lived token for `https://ai.azure.com/.default`
 through `DefaultAzureCredential`. Nothing secret is written into the experiment
 manifest or run bundle.
+
+The experiment builder lists chat-capable deployments from
+`AZURE_FOUNDRY_ENDPOINT` using that same Entra-default path. Embedding and
+other non-chat deployments are omitted when they are obvious. If the list call
+fails, the wizard shows an empty or error state and still allows typing a
+deployment name. Endpoint URLs and tokens are never returned to the dashboard.
 
 The Azure CLI login belongs to the process environment on that host. It is not
 automatically inherited by a Docker or Podman container, nor is the host's

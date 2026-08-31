@@ -87,6 +87,15 @@ Inputs are strictly validated, traversal and symlinks remain forbidden, tool
 loops are bounded with a final tool-free completion fallback, and only hashes
 and access metadata are persisted in `private/file_tools.jsonl`.
 
+The researcher API can list models for the builder without placing provider
+metadata in agent context. `GET /api/provider-models` asks the selected adapter
+what it currently exports: Foundry deployments on `AZURE_FOUNDRY_ENDPOINT`,
+Bedrock TEXT models and inference profiles for `THOUGHTSTAGE_AWS_PROFILE` in
+the experiment Region, OpenAI-compatible `GET /models` when the server
+supports it, and the built-in mock roster. Failures return an empty catalog
+plus a presence-only error. Credential values and endpoint URLs never appear
+in the response.
+
 The `openai_compatible` provider uses the standard Chat Completions API against
 a configurable base URL (default `http://localhost:11434/v1`). It targets local
 Ollama, vLLM, and llama.cpp servers as well as hosted OpenAI-compatible
