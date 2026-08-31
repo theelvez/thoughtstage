@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Experiment builder Review probes selected providers' required environment
   names for presence only and blocks Launch with a missing-name list. Mock
   needs nothing. Secret values are never returned.
+- One-command local launcher (`scripts/dev.ps1`, `scripts/dev.sh`) starts
+  `thoughtstage serve` and the dashboard from one shared environment. It
+  loads a gitignored `.env` (names in `.env.example`) without overriding
+  process values. No Docker. No credential values in the script.
 
 ### Changed
 

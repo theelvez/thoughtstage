@@ -50,9 +50,9 @@ Rowan use the deterministic mock provider, so this path needs no paid model key.
 
 ## Quick start
 
-One local story: **setup → verify → wizard**. Commands are Windows PowerShell.
-No Docker is required. On Unix, activate with `source .venv/bin/activate` and
-set variables with `export NAME=value`.
+One local story: **setup → verify → launch → wizard**. Commands are Windows
+PowerShell. No Docker is required. Unix uses `source .venv/bin/activate` and
+`./scripts/dev.sh`.
 
 Manifests store environment-variable **names** only. Never put API keys, SSO
 tokens, or other secret values in YAML, examples, or this README.
@@ -65,6 +65,8 @@ python -m venv .venv
 python -m pip install -e ".[dev]"
 ```
 
+Node.js must be on `PATH` (`node` and `pnpm`).
+
 ### 2. Verify with mock
 
 The mock provider is key-free and is the default in the experiment builder.
@@ -76,31 +78,63 @@ thoughtstage run examples/hello-stage/experiment.yaml
 That path exists in the tree. A successful run is enough to confirm the install
 before you attach a paid provider or open the wizard.
 
-### 3. Observer
+### 3. Launch API and dashboard
 
-Start the API and the dashboard in two terminals. Node.js must be on `PATH`
-(`node` and `pnpm`).
+One command starts `thoughtstage serve` and `pnpm --dir web dev` in the **same
+process environment**. Paid providers only work when their names are set in
+that process. Copy the example, fill only the names you use, and leave the
+rest empty:
+
+```powershell
+copy .env.example .env
+```
+
+`.env` is gitignored. Edit it locally. Never commit it. Never put the values
+in YAML. The launcher loads `.env` without overriding names already set in
+the current process. Empty values are skipped, so a copied example is a
+no-op until you fill something in.
+
+Mock needs none of those names. Foundry, Bedrock, and OpenAI-compatible use
+the same command after you set only the names you need.
+
+```powershell
+.\scripts\dev.ps1
+```
+
+If PowerShell blocks scripts:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\dev.ps1
+```
+
+Unix:
+
+```bash
+./scripts/dev.sh
+```
+
+The launcher activates `.venv` when present, starts the API on port **8000**,
+then the dashboard on port **5173**. It prints:
+
+- API: <http://127.0.0.1:8000/api/health>
+- Wizard: <http://127.0.0.1:5173/?view=builder>
+- Observer: <http://127.0.0.1:5173>
+
+Vite proxies `/api` to `http://localhost:8000`. If the browser console shows
+Vite `/api` **ECONNREFUSED**, the API did not come up on port 8000.
+
+Two terminals still work if you prefer them. Set the same names in **both**,
+or launch them from a shell that already loaded `.env`:
 
 ```powershell
 thoughtstage serve
-```
-
-API listens on port **8000**.
-
-```powershell
 pnpm --dir web dev
 ```
 
-Vite serves the dashboard on port **5173** and proxies `/api` to
-`http://localhost:8000`. Open <http://127.0.0.1:5173>.
-
-If the browser console shows Vite `/api` **ECONNREFUSED**, `thoughtstage serve`
-is not running (or is not on port 8000). Start the API first, then reload.
-
 ### 4. Paid providers (opt-in)
 
-Skip this section if you only need mock. Set these names in the **same process**
-that will run `thoughtstage serve` or `thoughtstage run`. The wizard Review
+Skip this section if you only need mock. Put values in `.env` (or in the
+current process) and use the same launcher from step 3. The wizard Review
 step probes presence only (never values) and blocks Launch with the missing
 names. Launching without them still fails with:
 
@@ -114,7 +148,19 @@ Uses Microsoft Entra ID by default, not an API key. `AZURE_FOUNDRY_ENDPOINT` is
 a **full resource URL**, not a key. Thoughtstage appends `/openai/v1/` itself;
 do not add that suffix.
 
-Worked example of the URL **shape** (substitute your own resource):
+Worked example of the URL **shape** (substitute your own resource in `.env`,
+not in YAML):
+
+```text
+AZURE_FOUNDRY_ENDPOINT=https://<your-resource>.cognitiveservices.azure.com
+```
+
+```powershell
+az login
+.\scripts\dev.ps1
+```
+
+CLI-only check without the dashboard:
 
 ```powershell
 az login
@@ -130,6 +176,19 @@ See [the Foundry provider guide](docs/providers/azure-foundry.md).
 `thoughtstage-source`, then the runtime profile `thoughtstage-bedrock`. YAML
 stays key-free.
 
+In `.env`:
+
+```text
+THOUGHTSTAGE_AWS_PROFILE=thoughtstage-bedrock
+```
+
+```powershell
+aws sso login --profile thoughtstage-source
+.\scripts\dev.ps1
+```
+
+CLI-only check:
+
 ```powershell
 aws sso login --profile thoughtstage-source
 $env:THOUGHTSTAGE_AWS_PROFILE = "thoughtstage-bedrock"
@@ -143,8 +202,8 @@ Scaffold, least-privilege role, and profile setup live in
 #### OpenAI, Grok, and other Chat Completions endpoints
 
 There is one hosted Chat Completions adapter: `openai_compatible`. Point it with
-`OPENAI_BASE_URL` and `OPENAI_API_KEY` (the **names**; set the values in your
-environment, never in YAML).
+`OPENAI_BASE_URL` and `OPENAI_API_KEY` (the **names**; set the values in `.env`
+or the process, never in YAML).
 
 Real bases:
 
@@ -153,13 +212,15 @@ Real bases:
 | OpenAI | `https://api.openai.com/v1` |
 | xAI (Grok) | `https://api.x.ai/v1` |
 
-```powershell
-$env:OPENAI_BASE_URL = "https://api.openai.com/v1"
-# Grok: $env:OPENAI_BASE_URL = "https://api.x.ai/v1"
-# Set OPENAI_API_KEY in this environment. Do not paste the value here or in YAML.
+In `.env` (do not paste the key into this README or into YAML):
+
+```text
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_API_KEY=
 ```
 
-Local Ollama can omit both and defaults to `http://localhost:11434/v1`. See
+Then `.\scripts\dev.ps1`. Local Ollama can omit both and defaults to
+`http://localhost:11434/v1`. See
 [the OpenAI-compatible provider guide](docs/providers/openai-compatible.md).
 
 There is **no first-class native Anthropic provider**. Anthropic models are not
@@ -169,8 +230,8 @@ client.
 
 ### 5. Wizard
 
-Open <http://127.0.0.1:5173/?view=builder> while the API and dashboard from
-step 3 are running.
+The launcher prints <http://127.0.0.1:5173/?view=builder>. Open that URL after
+step 3.
 
 Intended story:
 
@@ -282,6 +343,7 @@ and [the reproducibility contract](docs/reproducibility.md).
 ```text
 src/thoughtstage/    Python engine, API, provider contract, and file MCP
 web/                 React/TypeScript research dashboard
+scripts/             Local launcher (API + dashboard, shared environment)
 examples/            Key-free reproducible experiments
 infra/               Optional cloud infrastructure as code
 tests/               Boundary, safety, and reproducibility tests

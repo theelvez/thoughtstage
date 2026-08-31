@@ -59,6 +59,9 @@ $env:OPENAI_BASE_URL = "https://api.openai.com/v1"
 # Set OPENAI_API_KEY in this environment. Never put the value in YAML.
 ```
 
+Or put those names in a gitignored `.env` and run `.\scripts\dev.ps1` or
+`./scripts/dev.sh` so the API and dashboard share the same process.
+
 Never put the key itself in YAML. Agents may use different credential-variable
 references when an experiment requires independent bindings. Secret values never
 enter manifests, Compose files, CI, examples, tests, or run bundles.

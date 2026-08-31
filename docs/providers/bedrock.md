@@ -26,6 +26,10 @@ aws sso login --profile thoughtstage-source
 export THOUGHTSTAGE_AWS_PROFILE=thoughtstage-bedrock
 ```
 
+The same profile name can live in a gitignored `.env`. Then
+`.\scripts\dev.ps1` or `./scripts/dev.sh` starts the API and dashboard in
+that environment. Do not put the profile value in YAML.
+
 The environment variable contains an AWS profile name, not a secret. A manifest
 references that variable through `credential_env`:
 

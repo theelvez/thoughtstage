@@ -22,6 +22,10 @@ $env:AZURE_FOUNDRY_ENDPOINT = "https://latentspace-resource.cognitiveservices.az
 Unix equivalent: `source .venv/bin/activate` and
 `export AZURE_FOUNDRY_ENDPOINT=...`.
 
+To start the API and dashboard in that same environment, put the endpoint in
+a gitignored `.env` (see `.env.example`) and run `.\scripts\dev.ps1` or
+`./scripts/dev.sh`. Do not put the URL in YAML.
+
 The adapter obtains a short-lived token for `https://ai.azure.com/.default`
 through `DefaultAzureCredential`. Nothing secret is written into the experiment
 manifest or run bundle.
