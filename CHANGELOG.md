@@ -9,9 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Experiment builder model control lists deployments or models from the
+  selected provider endpoint (`GET /api/provider-models`). Foundry uses
+  `AZURE_FOUNDRY_ENDPOINT` with Entra default; Bedrock uses
+  `THOUGHTSTAGE_AWS_PROFILE` in the experiment Region; OpenAI-compatible uses
+  `GET {OPENAI_BASE_URL}/models` when the server supports it. List failures
+  stay empty and still allow typing. Secret values are never returned.
 - Experiment builder Review probes selected providers' required environment
   names for presence only and blocks Launch with a missing-name list. Mock
   needs nothing. Secret values are never returned.
+
+### Changed
+
+- Experiment builder model field is a text combobox with an explicit list
+  button. Changing provider no longer bricks the dropdown after auto-suggest
+  fills a name. Hardcoded Foundry, Bedrock, and OpenAI-compatible starter
+  names were removed.
 - Optional experiment `analyzer` declaration. Completed runs write `analysis.json`
   when one is named; the built-in `consensus` analyzer persists structured stance
   scores. `examples/azure-foundry/alphabet-consensus.yaml` declares it.

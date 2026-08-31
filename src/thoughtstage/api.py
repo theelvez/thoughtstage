@@ -7,6 +7,7 @@ from pathlib import Path
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, status
 from fastapi.responses import Response
+from pydantic import ValidationError
 
 from thoughtstage import __version__
 from thoughtstage.analysis_api import router as analysis_router
@@ -35,6 +36,11 @@ from thoughtstage.experiment_launch import (
     execute_launch,
     prepare_launch,
     probe_provider_environment,
+)
+from thoughtstage.provider_catalog import (
+    ProviderModelQuery,
+    ProviderName,
+    list_provider_models,
 )
 from thoughtstage.integrity import RunIntegrityError, verify_run_bundle
 from thoughtstage.models import ExperimentConfig
@@ -119,6 +125,31 @@ def provider_readiness(draft: ExperimentDraft) -> dict:
         return probe_provider_environment(draft.experiment)
     except ProviderReadinessError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.get("/api/provider-models")
+def provider_models(
+    provider: ProviderName,
+    region: str | None = None,
+    credential_env: str | None = None,
+    endpoint_env: str | None = None,
+    base_url_env: str | None = None,
+) -> dict:
+    """List models exported by a selected provider. Presence-only; never returns secrets."""
+
+    try:
+        catalog = list_provider_models(
+            ProviderModelQuery(
+                provider=provider,
+                region=region,
+                credential_env=credential_env,
+                endpoint_env=endpoint_env,
+                base_url_env=base_url_env,
+            )
+        )
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return catalog.model_dump(mode="json")
 
 
 @app.post("/api/experiments", status_code=status.HTTP_201_CREATED)

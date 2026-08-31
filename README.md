@@ -178,10 +178,18 @@ Intended story:
    provider.
 2. **Paid providers are opt-in.** Choose Microsoft Foundry, Amazon Bedrock, or
    OpenAI-compatible per participant only when you need them.
-3. **Environment names are visible before Launch.** Review lists the names your
+3. **Model lists come from the selected endpoint.** The Participants model
+   control stays a text field you can type in. Opening the list always shows
+   the other exported names, even after a provider change auto-suggests one.
+   Foundry lists deployments on `AZURE_FOUNDRY_ENDPOINT` (Entra default).
+   Bedrock lists models available to `THOUGHTSTAGE_AWS_PROFILE` in the
+   experiment Region (`us-east-2` in the builder). OpenAI-compatible calls
+   `GET {OPENAI_BASE_URL}/models` when that server supports it. If a list call
+   fails, the wizard shows an empty or error state and does not invent names.
+4. **Environment names are visible before Launch.** Review lists the names your
    selected providers use (`AZURE_FOUNDRY_ENDPOINT`,
    `THOUGHTSTAGE_AWS_PROFILE`, `OPENAI_BASE_URL`, `OPENAI_API_KEY` as applicable).
-4. **Verify before Launch.** Review probes whether those names are set in the
+5. **Verify before Launch.** Review probes whether those names are set in the
    `thoughtstage serve` process (presence only; values are never shown). Mock
    needs nothing and can Launch. Paid providers block Launch with the missing
    names until they are set. `openai_compatible` uses `OPENAI_BASE_URL` and

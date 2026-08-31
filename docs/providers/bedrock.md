@@ -101,6 +101,12 @@ completion call. Access metadata and result hashes are written only to
 
 ## Model IDs and geographic routing
 
+The experiment builder lists TEXT foundation models and inference profiles
+available to `THOUGHTSTAGE_AWS_PROFILE` in the experiment's Region (the wizard
+uses `us-east-2`, matching the smoke examples). Embedding IDs are omitted when
+obvious. If the list call fails, the wizard shows an empty or error state and
+still allows typing a model ID. Profile values are never returned.
+
 Use live catalog discovery rather than copying model IDs from old results:
 
 ```powershell

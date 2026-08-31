@@ -21,6 +21,14 @@ from thoughtstage.models import (
     ModelUsagePhase,
     ProviderResult,
 )
+from thoughtstage.provider_catalog import (
+    CatalogModel,
+    ProviderModelCatalog,
+    catalog_model,
+    empty_catalog,
+    looks_like_non_chat,
+    success_catalog,
+)
 
 DEFAULT_REGION = "us-east-2"
 _BEDROCK_TOOL_NAME = re.compile(r"^[a-zA-Z0-9_-]+$")
@@ -42,6 +50,11 @@ class _BedrockRuntimeClient(Protocol):
     def converse(self, **kwargs: Any) -> dict[str, Any]: ...
 
 
+class _BedrockCatalogClient(Protocol):
+    def list_foundation_models(self, **kwargs: Any) -> dict[str, Any]: ...
+    def list_inference_profiles(self, **kwargs: Any) -> dict[str, Any]: ...
+
+
 class BedrockSettings(BaseModel):
     """Strict provider-specific settings recorded in the experiment manifest."""
 
@@ -60,6 +73,7 @@ class BedrockSettings(BaseModel):
 
 
 ClientFactory = Callable[..., _BedrockRuntimeClient]
+CatalogClientFactory = Callable[..., _BedrockCatalogClient]
 
 
 def _default_client_factory(
@@ -70,6 +84,50 @@ def _default_client_factory(
 ) -> _BedrockRuntimeClient:
     session = boto3.Session(profile_name=profile_name, region_name=region_name)
     return session.client("bedrock-runtime", config=config)
+
+
+def _default_catalog_client_factory(
+    *,
+    profile_name: str | None,
+    region_name: str,
+    config: Config,
+) -> _BedrockCatalogClient:
+    session = boto3.Session(profile_name=profile_name, region_name=region_name)
+    return session.client("bedrock", config=config)
+
+
+def _paginate(method: Callable[..., dict[str, Any]], result_key: str, **kwargs: Any) -> list[Any]:
+    items: list[Any] = []
+    token: str | None = None
+    while True:
+        params = dict(kwargs)
+        if token:
+            params["nextToken"] = token
+        response = method(**params)
+        batch = response.get(result_key, [])
+        if isinstance(batch, list):
+            items.extend(batch)
+        token = response.get("nextToken")
+        if not token or len(items) >= 2_000:
+            break
+    return items
+
+
+def _is_chat_foundation_model(summary: dict[str, Any]) -> bool:
+    model_id = str(summary.get("modelId") or "")
+    name = str(summary.get("modelName") or "")
+    if looks_like_non_chat(model_id, name):
+        return False
+    outputs = {str(item).upper() for item in summary.get("outputModalities") or []}
+    if "TEXT" not in outputs:
+        return False
+    inference = {str(item).upper() for item in summary.get("inferenceTypesSupported") or []}
+    if inference and not inference.intersection({"ON_DEMAND", "INFERENCE_PROFILE"}):
+        return False
+    lifecycle = summary.get("modelLifecycle")
+    if isinstance(lifecycle, dict) and str(lifecycle.get("status", "")).upper() == "LEGACY":
+        return False
+    return True
 
 
 def _response_message(response: dict[str, Any]) -> dict[str, Any]:
@@ -168,8 +226,14 @@ class BedrockProvider:
     Converse's ``modelId`` field.
     """
 
-    def __init__(self, *, client_factory: ClientFactory = _default_client_factory) -> None:
+    def __init__(
+        self,
+        *,
+        client_factory: ClientFactory = _default_client_factory,
+        catalog_client_factory: CatalogClientFactory = _default_catalog_client_factory,
+    ) -> None:
         self._client_factory = client_factory
+        self._catalog_client_factory = catalog_client_factory
 
     def _settings(self, agent: AgentConfig) -> BedrockSettings:
         try:
@@ -350,6 +414,78 @@ class BedrockProvider:
                     }
                 )
             request["messages"].append({"role": "user", "content": tool_results})
+
+    def list_models(
+        self,
+        *,
+        region: str | None = None,
+        credential_env: str | None = None,
+    ) -> ProviderModelCatalog:
+        """List TEXT models and inference profiles for the configured AWS profile."""
+
+        profile_env = credential_env or "THOUGHTSTAGE_AWS_PROFILE"
+        profile_name = os.getenv(profile_env, "").strip()
+        if not profile_name:
+            return empty_catalog(
+                "bedrock",
+                source="endpoint",
+                error=(
+                    "Could not list Bedrock models. Set "
+                    f"{profile_env} in the thoughtstage serve process."
+                ),
+                missing=(profile_env,),
+            )
+        try:
+            settings = BedrockSettings.model_validate({"region": region or DEFAULT_REGION})
+        except ValidationError:
+            return empty_catalog(
+                "bedrock",
+                source="endpoint",
+                error="Could not list Bedrock models. The experiment Region is invalid.",
+            )
+        config = Config(
+            retries={"total_max_attempts": 3, "mode": "standard"},
+            connect_timeout=10,
+            read_timeout=30,
+        )
+        try:
+            client = self._catalog_client_factory(
+                profile_name=profile_name,
+                region_name=settings.region,
+                config=config,
+            )
+            foundations = _paginate(client.list_foundation_models, "modelSummaries")
+            profiles = _paginate(client.list_inference_profiles, "inferenceProfileSummaries")
+        except Exception:
+            return empty_catalog(
+                "bedrock",
+                source="endpoint",
+                error=(
+                    "Could not list Bedrock models. Check "
+                    f"{profile_env} and the experiment Region."
+                ),
+                missing=(),
+            )
+        models: list[CatalogModel] = []
+        for summary in profiles:
+            if not isinstance(summary, dict):
+                continue
+            profile_id = str(summary.get("inferenceProfileId") or "").strip()
+            label = str(summary.get("inferenceProfileName") or profile_id).strip()
+            if not profile_id or looks_like_non_chat(profile_id, label):
+                continue
+            if str(summary.get("status", "ACTIVE")).upper() not in {"", "ACTIVE"}:
+                continue
+            models.append(catalog_model(profile_id, label or profile_id))
+        for summary in foundations:
+            if not isinstance(summary, dict) or not _is_chat_foundation_model(summary):
+                continue
+            model_id = str(summary.get("modelId") or "").strip()
+            if not model_id:
+                continue
+            label = str(summary.get("modelName") or model_id).strip()
+            models.append(catalog_model(model_id, label or model_id))
+        return success_catalog("bedrock", source="endpoint", models=models)
 
     def generate(
         self,

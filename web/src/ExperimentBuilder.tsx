@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import "./experiment-builder.css";
+import ModelCombobox, { type ModelOption } from "./ModelCombobox";
 import ParticipantRosterSetup, { type GeneratedParticipant } from "./ParticipantRosterSetup";
 
 type Provider = "mock" | "azure_foundry" | "bedrock" | "openai_compatible";
@@ -62,47 +63,30 @@ type EnvNote = { name: string; detail: string };
 
 type EnvLine = EnvNote & { status: "present" | "missing" | "unset" };
 
+type CatalogState = {
+  status: "loading" | "ok" | "error";
+  models: ModelOption[];
+  error: string;
+};
+
+type CatalogResponse = {
+  ok: boolean;
+  models?: { id: string; label: string }[];
+  error?: string | null;
+};
+
 const steps = ["Research question", "Participants", "Interaction", "Materials", "Review"];
 
-const providerModels: Record<Provider, readonly { value: string; label: string }[]> = {
-  mock: [
-    { value: "deterministic-mock", label: "Deterministic mock · recommended" },
-    { value: "deterministic-v1", label: "Deterministic mock · legacy example ID" },
-  ],
-  azure_foundry: [
-    { value: "gpt-4o", label: "GPT-4o" },
-    { value: "Llama-3.3-70B-Instruct", label: "Llama 3.3 70B Instruct" },
-    { value: "grok-4-1-fast-reasoning", label: "Grok 4.1 Fast Reasoning" },
-    { value: "DeepSeek-V3.2", label: "DeepSeek V3.2" },
-  ],
-  bedrock: [
-    { value: "us.amazon.nova-2-lite-v1:0", label: "Amazon Nova 2 Lite" },
-    { value: "us.amazon.nova-pro-v1:0", label: "Amazon Nova Pro" },
-    {
-      value: "us.meta.llama4-scout-17b-instruct-v1:0",
-      label: "Meta Llama 4 Scout 17B Instruct",
-    },
-    {
-      value: "us.meta.llama4-maverick-17b-instruct-v1:0",
-      label: "Meta Llama 4 Maverick 17B Instruct",
-    },
-    {
-      value: "mistral.mistral-large-3-675b-instruct",
-      label: "Mistral Large 3 675B Instruct",
-    },
-  ],
-  openai_compatible: [
-    { value: "llama3.2", label: "Llama 3.2 · Ollama local default" },
-    { value: "gpt-4o-mini", label: "GPT-4o mini · OpenAI API" },
-    { value: "llama-3.3-70b-versatile", label: "Llama 3.3 70B Versatile · Groq" },
-  ],
-};
+const mockModels: readonly ModelOption[] = [
+  { value: "deterministic-mock", label: "Deterministic mock · recommended" },
+  { value: "deterministic-v1", label: "Deterministic mock · legacy example ID" },
+];
 
 const providerModelHelp: Record<Provider, string> = {
   mock: "Built-in key-free models. No environment variables.",
-  azure_foundry: "Known Thoughtstage deployments. You may enter your own deployment name. Requires AZURE_FOUNDRY_ENDPOINT.",
-  bedrock: "Known Bedrock model and inference-profile IDs. You may enter another ID. Requires THOUGHTSTAGE_AWS_PROFILE (a profile name, not an access key).",
-  openai_compatible: "Local Ollama/vLLM/llama.cpp tags or hosted Chat Completions model IDs. Hosted endpoints use OPENAI_BASE_URL and OPENAI_API_KEY.",
+  azure_foundry: "Deployments from AZURE_FOUNDRY_ENDPOINT in the thoughtstage serve process. You may type a name if the list is empty.",
+  bedrock: "Models available to THOUGHTSTAGE_AWS_PROFILE in this experiment's region. You may type another ID. The profile name is not an access key.",
+  openai_compatible: "Models from GET {OPENAI_BASE_URL}/models when the server lists them. Otherwise type a tag. Hosted endpoints use OPENAI_BASE_URL and OPENAI_API_KEY.",
 };
 
 const providerCredentialHelp: Record<Provider, string> = {
@@ -161,14 +145,24 @@ function envLineMark(status: EnvLine["status"]) {
 }
 
 const providerDefaults: Record<Provider, { model: string; credentialEnv: string }> = {
-  mock: { model: providerModels.mock[0].value, credentialEnv: "" },
-  azure_foundry: { model: providerModels.azure_foundry[0].value, credentialEnv: "" },
-  bedrock: {
-    model: providerModels.bedrock[0].value,
-    credentialEnv: "THOUGHTSTAGE_AWS_PROFILE",
-  },
-  openai_compatible: { model: providerModels.openai_compatible[0].value, credentialEnv: "" },
+  mock: { model: mockModels[0].value, credentialEnv: "" },
+  azure_foundry: { model: "", credentialEnv: "" },
+  bedrock: { model: "", credentialEnv: "THOUGHTSTAGE_AWS_PROFILE" },
+  openai_compatible: { model: "", credentialEnv: "" },
 };
+
+function catalogKey(provider: Provider, credentialEnv: string) {
+  return `${provider}:${provider === "bedrock" ? "us-east-2" : ""}:${credentialEnv}`;
+}
+
+function catalogQuery(provider: Provider, credentialEnv: string) {
+  const params = new URLSearchParams({ provider });
+  if (provider === "bedrock") params.set("region", "us-east-2");
+  if (credentialEnv) params.set("credential_env", credentialEnv);
+  if (provider === "azure_foundry") params.set("endpoint_env", "AZURE_FOUNDRY_ENDPOINT");
+  if (provider === "openai_compatible") params.set("base_url_env", "OPENAI_BASE_URL");
+  return `/api/provider-models?${params.toString()}`;
+}
 
 function slugify(value: string) {
   const slug = value
@@ -282,6 +276,8 @@ function ExperimentBuilder() {
   const [error, setError] = useState("");
   const [saved, setSaved] = useState<SaveResult | null>(null);
   const [launchResult, setLaunchResult] = useState<LaunchResult | null>(null);
+  const [catalogs, setCatalogs] = useState<Record<string, CatalogState>>({});
+  const requestedCatalogs = useRef(new Set<string>());
 
   const duplicateAgentIds = useMemo(() => {
     const seen = new Set<string>();
@@ -358,6 +354,79 @@ function ExperimentBuilder() {
     },
     materials: materials.map(({ path, content }) => ({ path, content })),
   }), [agents, description, id, materials, name, privateMemory, rounds, schedule, seed, stimuli, systemPrompt, turnOrder]);
+
+  const catalogKeys = useMemo(
+    () => [...new Set(agents.map((agent) => catalogKey(agent.provider, agent.credentialEnv.trim())))],
+    [agents],
+  );
+
+  useEffect(() => {
+    const pending = catalogKeys.filter((key) => !requestedCatalogs.current.has(key));
+    if (pending.length === 0) return;
+    for (const key of pending) requestedCatalogs.current.add(key);
+    setCatalogs((current) => {
+      const next = { ...current };
+      for (const key of pending) next[key] = { status: "loading", models: [], error: "" };
+      return next;
+    });
+    const load = async () => {
+      await Promise.all(pending.map(async (key) => {
+        const [provider, , credentialEnv] = key.split(":") as [Provider, string, string];
+        try {
+          const response = await fetch(catalogQuery(provider, credentialEnv));
+          const body = await responsePayload(response) as CatalogResponse | null;
+          if (!response.ok) {
+            setCatalogs((current) => ({
+              ...current,
+              [key]: {
+                status: "error",
+                models: [],
+                error: errorMessage(body, `Could not list ${provider} models (${response.status})`),
+              },
+            }));
+            return;
+          }
+          const models = (body?.models ?? []).map((model) => ({
+            value: model.id,
+            label: model.label || model.id,
+          }));
+          setCatalogs((current) => ({
+            ...current,
+            [key]: {
+              status: body?.ok ? "ok" : "error",
+              models,
+              error: body?.ok ? "" : (body?.error || "Could not list models from this endpoint."),
+            },
+          }));
+        } catch (reason) {
+          setCatalogs((current) => ({
+            ...current,
+            [key]: {
+              status: "error",
+              models: [],
+              error: reason instanceof Error ? reason.message : "Could not list models from this endpoint.",
+            },
+          }));
+        }
+      }));
+    };
+    void load();
+  }, [catalogKeys]);
+
+  useEffect(() => {
+    setAgents((current) => {
+      let changed = false;
+      const next = current.map((agent) => {
+        const catalog = catalogs[catalogKey(agent.provider, agent.credentialEnv.trim())];
+        if (!catalog || catalog.status !== "ok" || catalog.models.length === 0 || agent.model.trim()) {
+          return agent;
+        }
+        changed = true;
+        return { ...agent, model: catalog.models[0].value };
+      });
+      return changed ? next : current;
+    });
+  }, [catalogs]);
 
   useEffect(() => {
     if (step !== 4) return;
@@ -599,16 +668,19 @@ function ExperimentBuilder() {
                     <div className="field-row">
                       <label className="field">
                         <span>Model or deployment</span>
-                        <input
-                          list={`model-options-${agent.key}`}
+                        <ModelCombobox
                           value={agent.model}
-                          onChange={(event) => updateAgent(agent.key, { model: event.target.value })}
+                          options={
+                            catalogs[catalogKey(agent.provider, agent.credentialEnv.trim())]?.models
+                            ?? (agent.provider === "mock" ? [...mockModels] : [])
+                          }
+                          loading={
+                            catalogs[catalogKey(agent.provider, agent.credentialEnv.trim())]?.status
+                            === "loading"
+                          }
+                          error={catalogs[catalogKey(agent.provider, agent.credentialEnv.trim())]?.error}
+                          onChange={(model) => updateAgent(agent.key, { model })}
                         />
-                        <datalist id={`model-options-${agent.key}`}>
-                          {providerModels[agent.provider].map((model) => (
-                            <option key={model.value} value={model.value} label={model.label} />
-                          ))}
-                        </datalist>
                         <small>{providerModelHelp[agent.provider]}</small>
                       </label>
                       <label className="field"><span>Credential environment name</span><input value={agent.credentialEnv} onChange={(event) => updateAgent(agent.key, { credentialEnv: event.target.value.toUpperCase() })} placeholder="Optional · never the credential value" /><small>{providerCredentialHelp[agent.provider]}</small></label>

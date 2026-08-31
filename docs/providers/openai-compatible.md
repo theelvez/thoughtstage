@@ -78,6 +78,11 @@ parameters:
 The `model` field is the Chat Completions model name (for example an Ollama tag
 or a Groq model ID). It is recorded in the experiment manifest.
 
+The experiment builder calls `GET {OPENAI_BASE_URL}/models` when the adapter
+and server support it. If that endpoint is missing or fails, the field stays
+free-text and the wizard does not invent model names. API keys are never
+returned.
+
 Supported provider parameters are:
 
 | Parameter | Default | Meaning |
