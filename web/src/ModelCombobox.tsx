@@ -6,6 +6,8 @@ export type ModelOption = {
 };
 
 type ModelComboboxProps = {
+  id?: string;
+  labelledBy?: string;
   value: string;
   options: readonly ModelOption[];
   loading?: boolean;
@@ -14,6 +16,8 @@ type ModelComboboxProps = {
 };
 
 function ModelCombobox({
+  id,
+  labelledBy,
   value,
   options,
   loading = false,
@@ -84,7 +88,9 @@ function ModelCombobox({
     <div className="model-combobox" ref={containerRef}>
       <div className="model-combobox-control">
         <input
+          id={id}
           role="combobox"
+          aria-labelledby={labelledBy}
           aria-expanded={open}
           aria-controls={listId}
           aria-autocomplete="list"
@@ -122,9 +128,11 @@ function ModelCombobox({
             </li>
           )}
           {visible.map((option, index) => (
-            <li key={option.value} role="option" aria-selected={index === activeIndex}>
+            <li key={option.value}>
               <button
                 type="button"
+                role="option"
+                aria-selected={index === activeIndex}
                 className={index === activeIndex ? "is-active" : ""}
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => selectOption(option.value)}

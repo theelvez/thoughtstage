@@ -152,9 +152,7 @@ def _is_chat_deployment(item: Any, deployment_id: str) -> bool:
         return False
     if embeddings is True and chat is not True:
         return False
-    if looks_like_non_chat(deployment_id):
-        return False
-    return True
+    return not looks_like_non_chat(deployment_id)
 
 
 def _iter_catalog_items(payload: Any) -> list[Any]:
@@ -596,9 +594,7 @@ class AzureFoundryProvider:
 
     def _fetch_foundry_items(self, endpoint: str, headers: dict[str, str]) -> list[Any]:
         root = _resource_root(endpoint)
-        deployments_url = (
-            f"{root}/openai/deployments?api-version={FOUNDRY_DEPLOYMENTS_API_VERSION}"
-        )
+        deployments_url = f"{root}/openai/deployments?api-version={FOUNDRY_DEPLOYMENTS_API_VERSION}"
         last_error: AzureFoundryError | None = None
         saw_success = False
         for url in (
@@ -651,10 +647,7 @@ class AzureFoundryProvider:
             return empty_catalog(
                 "azure_foundry",
                 source="endpoint",
-                error=(
-                    "Could not list Foundry deployments. Check Entra login and "
-                    f"{env_name}."
-                ),
+                error=(f"Could not list Foundry deployments. Check Entra login and {env_name}."),
                 missing=(),
             )
         models: list[CatalogModel] = []

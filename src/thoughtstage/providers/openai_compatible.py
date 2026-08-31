@@ -349,7 +349,9 @@ class OpenAICompatibleProvider:
                         f"credential environment variable {credential_env!r} is not set"
                     )
             else:
-                credential = os.getenv(settings.api_key_env, "").strip() or LOCAL_API_KEY_PLACEHOLDER
+                credential = (
+                    os.getenv(settings.api_key_env, "").strip() or LOCAL_API_KEY_PLACEHOLDER
+                )
             client = self._client_factory(
                 base_url=_normalize_base_url(endpoint),
                 api_key=credential,
@@ -362,10 +364,7 @@ class OpenAICompatibleProvider:
                 return empty_catalog(
                     "openai_compatible",
                     source="endpoint",
-                    error=(
-                        "This OpenAI-compatible server does not list models. "
-                        "Type a model ID."
-                    ),
+                    error=("This OpenAI-compatible server does not list models. Type a model ID."),
                 )
             payload = list_models()
         except OpenAICompatibleConfigurationError:
@@ -389,10 +388,7 @@ class OpenAICompatibleProvider:
             return empty_catalog(
                 "openai_compatible",
                 source="endpoint",
-                error=(
-                    "This OpenAI-compatible server does not list models. "
-                    "Type a model ID."
-                ),
+                error=("This OpenAI-compatible server does not list models. Type a model ID."),
             )
         raw_items = _get(payload, "data")
         if raw_items is None:
@@ -401,10 +397,7 @@ class OpenAICompatibleProvider:
             return empty_catalog(
                 "openai_compatible",
                 source="endpoint",
-                error=(
-                    "This OpenAI-compatible server does not list models. "
-                    "Type a model ID."
-                ),
+                error=("This OpenAI-compatible server does not list models. Type a model ID."),
             )
         models: list[CatalogModel] = []
         for item in raw_items:

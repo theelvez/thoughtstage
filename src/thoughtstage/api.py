@@ -37,11 +37,6 @@ from thoughtstage.experiment_launch import (
     prepare_launch,
     probe_provider_environment,
 )
-from thoughtstage.provider_catalog import (
-    ProviderModelQuery,
-    ProviderName,
-    list_provider_models,
-)
 from thoughtstage.integrity import RunIntegrityError, verify_run_bundle
 from thoughtstage.models import ExperimentConfig
 from thoughtstage.observer import (
@@ -54,6 +49,11 @@ from thoughtstage.observer import (
 from thoughtstage.participant_roster import (
     ParticipantRosterRequest,
     generate_participant_roster,
+)
+from thoughtstage.provider_catalog import (
+    ProviderModelQuery,
+    ProviderName,
+    list_provider_models,
 )
 from thoughtstage.run_comparison import (
     RunComparisonError,

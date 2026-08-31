@@ -666,9 +666,11 @@ function ExperimentBuilder() {
                       <label className="field"><span>Provider</span><select value={agent.provider} onChange={(event) => changeProvider(agent.key, event.target.value as Provider)}><option value="mock">Mock · no cost</option><option value="azure_foundry">Microsoft Foundry</option><option value="bedrock">Amazon Bedrock</option><option value="openai_compatible">OpenAI-compatible</option></select></label>
                     </div>
                     <div className="field-row">
-                      <label className="field">
-                        <span>Model or deployment</span>
+                      <div className="field">
+                        <span id={`model-label-${agent.key}`}>Model or deployment</span>
                         <ModelCombobox
+                          id={`model-field-${agent.key}`}
+                          labelledBy={`model-label-${agent.key}`}
                           value={agent.model}
                           options={
                             catalogs[catalogKey(agent.provider, agent.credentialEnv.trim())]?.models
@@ -682,7 +684,7 @@ function ExperimentBuilder() {
                           onChange={(model) => updateAgent(agent.key, { model })}
                         />
                         <small>{providerModelHelp[agent.provider]}</small>
-                      </label>
+                      </div>
                       <label className="field"><span>Credential environment name</span><input value={agent.credentialEnv} onChange={(event) => updateAgent(agent.key, { credentialEnv: event.target.value.toUpperCase() })} placeholder="Optional · never the credential value" /><small>{providerCredentialHelp[agent.provider]}</small></label>
                     </div>
                     <label className="field wide"><span>Public-role persona</span><textarea rows={3} value={agent.persona} onChange={(event) => updateAgent(agent.key, { persona: event.target.value })} /></label>

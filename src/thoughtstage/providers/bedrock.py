@@ -125,9 +125,9 @@ def _is_chat_foundation_model(summary: dict[str, Any]) -> bool:
     if inference and not inference.intersection({"ON_DEMAND", "INFERENCE_PROFILE"}):
         return False
     lifecycle = summary.get("modelLifecycle")
-    if isinstance(lifecycle, dict) and str(lifecycle.get("status", "")).upper() == "LEGACY":
-        return False
-    return True
+    return not (
+        isinstance(lifecycle, dict) and str(lifecycle.get("status", "")).upper() == "LEGACY"
+    )
 
 
 def _response_message(response: dict[str, Any]) -> dict[str, Any]:
@@ -461,8 +461,7 @@ class BedrockProvider:
                 "bedrock",
                 source="endpoint",
                 error=(
-                    "Could not list Bedrock models. Check "
-                    f"{profile_env} and the experiment Region."
+                    f"Could not list Bedrock models. Check {profile_env} and the experiment Region."
                 ),
                 missing=(),
             )

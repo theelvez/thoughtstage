@@ -10,6 +10,7 @@ from pydantic import ValidationError
 from thoughtstage.api import app
 from thoughtstage.provider_catalog import (
     ProviderModelQuery,
+    list_provider_models,
     looks_like_non_chat,
 )
 from thoughtstage.providers.azure_foundry import AzureFoundryProvider
@@ -151,7 +152,7 @@ def test_foundry_lists_chat_deployments_and_drops_embeddings(
     monkeypatch.setenv("AZURE_FOUNDRY_ENDPOINT", secret_endpoint)
     getter = RecordingJsonGetter(_foundry_deployments())
     catalog = AzureFoundryProvider(
-        token_provider_factory=lambda: (lambda: "token-value"),
+        token_provider_factory=lambda: lambda: "token-value",
         json_getter=getter,
     ).list_models()
 
@@ -192,7 +193,7 @@ def test_foundry_list_failure_is_empty_and_secret_free(
     secret_endpoint = "https://secret-foundry.example/do-not-return"
     monkeypatch.setenv("AZURE_FOUNDRY_ENDPOINT", secret_endpoint)
     catalog = AzureFoundryProvider(
-        token_provider_factory=lambda: (lambda: "SECRET-TOKEN"),
+        token_provider_factory=lambda: lambda: "SECRET-TOKEN",
         json_getter=FailingJsonGetter(),
     ).list_models()
     dumped = catalog.model_dump_json()
@@ -259,6 +260,29 @@ def test_query_rejects_anthropic() -> None:
         ProviderModelQuery(provider="anthropic")  # type: ignore[arg-type]
 
 
+def test_query_rejects_invalid_region() -> None:
+    with pytest.raises(ValidationError):
+        ProviderModelQuery(provider="bedrock", region="US-EAST-2")
+    assert ProviderModelQuery(provider="bedrock", region="  ").region is None
+
+
+def test_list_provider_models_dispatches_without_inventing_names(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("AZURE_FOUNDRY_ENDPOINT", raising=False)
+    monkeypatch.delenv("THOUGHTSTAGE_AWS_PROFILE", raising=False)
+    mock = list_provider_models(ProviderModelQuery(provider="mock"))
+    foundry = list_provider_models(ProviderModelQuery(provider="azure_foundry"))
+    bedrock = list_provider_models(
+        ProviderModelQuery(provider="bedrock", region="us-east-2"),
+    )
+
+    assert mock.ok is True
+    assert [model.id for model in mock.models] == [item.id for item in MOCK_MODELS]
+    assert foundry.ok is False and foundry.models == ()
+    assert bedrock.ok is False and bedrock.models == ()
+
+
 def test_provider_models_api_mock_and_never_returns_secrets(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -289,3 +313,8 @@ def test_provider_models_api_mock_and_never_returns_secrets(
     assert secret_profile not in foundry.text
     assert "https://" not in foundry.text
     assert anthropic.status_code == 422
+    bad_region = client.get(
+        "/api/provider-models",
+        params={"provider": "bedrock", "region": "US-EAST-2"},
+    )
+    assert bad_region.status_code == 422
